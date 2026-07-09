@@ -5,7 +5,7 @@ using Scalar.AspNetCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddOpenApi(); // .NET Yerleþik OpenAPI
+builder.Services.AddOpenApi(); // .NET Yerleþik OpenAPI geldi mi
 
 builder.Services.AddDbContext<DbRestoranContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
