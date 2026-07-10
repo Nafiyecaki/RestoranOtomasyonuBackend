@@ -15,7 +15,7 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi(); // JSON çýktýsý üretir
-    app.MapScalarApiReference(); // Modern API arayüzü (/scalar/v1111111)
+    app.MapScalarApiReference(); // Modern API arayüzü (/scalar/v22222)
 }
 
 app.UseHttpsRedirection();
