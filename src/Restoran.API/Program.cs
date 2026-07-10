@@ -8,7 +8,7 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi(); // .NET Yerleþik OpenAPI geldi mi
 
 builder.Services.AddDbContext<DbRestoranContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString(" zzzzz")));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("deneme123")));
 
 var app = builder.Build();
 
