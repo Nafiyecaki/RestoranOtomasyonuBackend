@@ -1,6 +1,6 @@
 ﻿namespace Restoran.Core;
 
-public class Class1
+public class Class2
 {
 
 }
