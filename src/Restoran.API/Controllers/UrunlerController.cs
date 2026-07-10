@@ -2,37 +2,48 @@
 using Microsoft.EntityFrameworkCore;
 using Restoran.Data;
 
-namespace Restoran.API.Controllers
+namespace Restoran.API.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+public class UrunlerController : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class UrunlerController : ControllerBase
+    private readonly DbRestoranContext _context;
+
+    public UrunlerController(DbRestoranContext context)
     {
-        private readonly DbRestoranContext _context;
+        _context = context;
+    }
 
-        // Constructor ile DbContext'i içeriye enjekte ediyoruz (Dependency Injection)
-        public UrunlerController(DbRestoranContext context)
-        {
-            _context = context;
-        }
-
-        // GET: /api/urunler
-        [HttpGet]
-        public async Task<IActionResult> GetUrunler()
-        {
-            try
+    // GET /api/urunler
+    [HttpGet]
+    public async Task<IActionResult> GetAll()
+    {
+        var urunler = await _context.Urunlers
+            .Include(u => u.Kategori)
+            .Select(u => new
             {
-                // Test verisi çok büyük olduğu için ilk aşamada sunucuyu yormamak adına ilk 100 ürünü çekelim
-                var urunler = await _context.Urunlers
-                    .Take(100)
-                    .ToListAsync();
+                u.UrunId,
+                u.UrunAdi,
+                u.Fiyat,
+                u.StokMiktari,
+                u.Aciklamalar,
+                KategoriAdi = u.Kategori.KategoriAdi
+            })
+            .ToListAsync();
 
-                return Ok(urunler);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Veritabanı hatası: {ex.Message}");
-            }
-        }
+        return Ok(urunler);
+    }
+
+    // GET /api/urunler/1207
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var urun = await _context.Urunlers
+            .Include(u => u.Kategori)
+            .FirstOrDefaultAsync(u => u.UrunId == id);
+
+        if (urun == null) return NotFound();
+        return Ok(urun);
     }
 }
