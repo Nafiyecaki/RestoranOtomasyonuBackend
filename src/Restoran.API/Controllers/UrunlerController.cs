@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.Data;
 
@@ -36,7 +36,6 @@ public class UrunlerController : ControllerBase
     }
 
     // GET /api/urunler/{id}
-    // GET /api/urunler/1207
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
