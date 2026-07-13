@@ -1,0 +1,11 @@
+﻿namespace Restoran.API.Dtos;
+
+public class IadeEkleDto
+{
+    public string IadeSebebi { get; set; } = null!;
+    public string? IadeDurumu { get; set; } = "Tamamlandı"; // Varsayılan durum atadık
+    public decimal IadeTutari { get; set; }
+    public int? SiparisDetayId { get; set; }
+    public int? UrunId { get; set; }
+    public int? PersonelId { get; set; }
+}

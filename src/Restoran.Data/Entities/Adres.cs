@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace Restoran.Data.Entities;
 
-public partial class Adre
+public partial class Adres
 {
     public int AdresId { get; set; }
 
