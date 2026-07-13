@@ -1,8 +1,9 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Restoran.API.Dtos;
 using Restoran.Data;
 using Restoran.Data.Entities;
-using Restoran.API.Dtos;
 
 namespace Restoran.API.Controllers;
 
@@ -19,6 +20,8 @@ public class SiparislerController : ControllerBase
 
     // POST /api/siparisler -> yeni sipariş oluşturur
     [HttpPost]
+    [Authorize(Roles = "Yönetici,Garson")]      // <-- EKLE (siparişi garson açar)
+
     public async Task<IActionResult> CreateOrder([FromBody] SiparisOlusturDto dto)
     {
         if (dto.Detaylar == null || !dto.Detaylar.Any())
@@ -70,6 +73,8 @@ public class SiparislerController : ControllerBase
 
     // GET /api/siparisler/5 -> tek siparişi detaylarıyla getirir
     [HttpGet("{id}")]
+    [Authorize]                                  // <-- EKLE (görmek için giriş yeterli)
+
     public async Task<IActionResult> GetById(int id)
     {
         var siparis = await _context.Siparislers

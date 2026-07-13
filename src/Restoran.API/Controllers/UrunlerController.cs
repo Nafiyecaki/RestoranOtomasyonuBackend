@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.Data;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Restoran.API.Controllers;
 
@@ -17,6 +18,7 @@ public class UrunlerController : ControllerBase
 
     // GET /api/Urunler
     [HttpGet]
+    [Authorize]                                    // <-- EKLENDÝ: token'sýz giriþ yasak
     public async Task<IActionResult> GetAll()
     {
         var urunler = await _context.Urunlers
@@ -31,15 +33,15 @@ public class UrunlerController : ControllerBase
                 KategoriAdi = u.Kategori != null ? u.Kategori.KategoriAdi : null
             })
             .ToListAsync();
-
         return Ok(urunler);
     }
 
+    // GET /api/Urunler/5
     [HttpGet("{id}")]
+    [Authorize]                                    // <-- EKLENDÝ
     public async Task<IActionResult> GetById(int id)
     {
         var urun = await _context.Urunlers
-
             .Where(u => u.UrunId == id)
             .Select(u => new
             {

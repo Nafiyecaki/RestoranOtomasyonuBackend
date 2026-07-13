@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.Data;
 
@@ -17,6 +18,8 @@ public class RezervasyonController : ControllerBase
 
     // GET /api/rezervasyon
     [HttpGet]
+    [Authorize(Roles = "Yönetici,Garson")]
+
     public async Task<IActionResult> GetAll()
     {
         var rezervasyonlar = await _context.Rezervasyons

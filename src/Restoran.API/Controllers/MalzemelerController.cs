@@ -1,8 +1,9 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Restoran.API.Dtos;
 using Restoran.Data;
 using Restoran.Data.Entities;
-using Restoran.API.Dtos;
 
 namespace Restoran.API.Controllers;
 
@@ -19,6 +20,8 @@ public class MalzemelerController : ControllerBase
 
     // GET /api/Malzemeler -> tüm malzemeler
     [HttpGet]
+    [Authorize(Roles = "Yönetici,Aşçı")]
+
     public async Task<IActionResult> GetAll()
     {
         var malzemeler = await _context.Malzemelers

@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.Data;
 
@@ -17,6 +18,7 @@ public class KasaController : ControllerBase
 
     
     [HttpGet]
+    [Authorize(Roles = "Yönetici")]                 // kasayı açma/kapatma yönetici işi
     public async Task<IActionResult> GetAll()
     {
         var kasalar = await _context.Kasas

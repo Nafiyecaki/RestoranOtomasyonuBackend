@@ -1,29 +1,48 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 using Restoran.Data;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Servis kayýtlarý
 builder.Services.AddControllers();
-builder.Services.AddOpenApi();                      // .NET 9 yerleþik OpenAPI (JSON üretir)
+builder.Services.AddOpenApi();
 
-// EF Core: DbContext'i DI container'a kaydet
-// "DbRestoran" -> appsettings.Development.json'daki ConnectionStrings anahtarý
 builder.Services.AddDbContext<DbRestoranContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DbRestoran")));
 
+// JWT kimlik doðrulama
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
+        };
+    });
+
 var app = builder.Build();
 
-// Sadece geliþtirme ortamýnda API dokümantasyon arayüzü
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();               // /openapi/v1.json
-    app.MapScalarApiReference();    // /scalar/v1 -> modern test arayüzü
+    app.MapOpenApi();
+    app.MapScalarApiReference();
 }
 
 app.UseHttpsRedirection();
-app.UseAuthorization();
+
+app.UseAuthentication();   // önce: sen kimsin
+app.UseAuthorization();    // sonra: ne yapabilirsin
+
 app.MapControllers();
 
 app.Run();

@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.Data;
 
@@ -16,7 +17,10 @@ public class MasaController : ControllerBase
     }
 
     // GET /api/masa
-    [HttpGet]
+    [HttpGet] 
+    [Authorize]                                  // masaları herkes görür (garson ekranı)
+                                                 // POST/PUT/DELETE varsa → [Authorize(Roles = "Yönetici")]  // masa tanımını yönetici değiştirir
+                                                 // MasaDurumu güncelleme varsa → [Authorize(Roles = "Yönetici,Garson")]
     public async Task<IActionResult> GetAll()
     {
         var masalar = await _context.Masas

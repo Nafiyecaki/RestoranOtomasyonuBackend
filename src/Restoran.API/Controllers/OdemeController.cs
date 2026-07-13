@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.API.Dtos;
 using Restoran.Data;
@@ -19,6 +20,7 @@ public class OdemeController : ControllerBase
 
     // GET /api/odeme
     [HttpGet]
+    [Authorize(Roles = "Yönetici,Garson,Kurye")]    // kurye kapıda tahsilat yapar!
     public async Task<IActionResult> GetAll()
     {
         var odemeler = await _context.Odemes

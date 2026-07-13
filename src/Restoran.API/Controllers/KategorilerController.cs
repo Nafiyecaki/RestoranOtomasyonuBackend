@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.Data;
 using Restoran.Data.Entities;
@@ -18,6 +19,8 @@ public class KategorilerController : ControllerBase
 
     // GET /api/Kategoriler
     [HttpGet]
+    [Authorize]                       // kategorileri herkes görür (menü için)
+                                      // POST/PUT/DELETE varsa → [Authorize(Roles = "Yönetici")]
     public async Task<IActionResult> GetAll()
     {
         var kategoriler = await _context.Kategoris
