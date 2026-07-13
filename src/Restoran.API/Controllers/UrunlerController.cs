@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.Data;
 
@@ -35,12 +35,11 @@ public class UrunlerController : ControllerBase
         return Ok(urunler);
     }
 
-    // GET /api/Urunler/{id}
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
         var urun = await _context.Urunlers
-            .Include(u => u.Kategori)
+
             .Where(u => u.UrunId == id)
             .Select(u => new
             {
