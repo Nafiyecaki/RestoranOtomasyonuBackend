@@ -21,7 +21,7 @@ public partial class Uyeler
 
     public DateTime? KayitTarihi { get; set; }
 
-    public virtual ICollection<Adre> Adres { get; set; } = new List<Adre>();
+    public virtual ICollection<Adres> Adres { get; set; } = new List<Adres>();
 
     public virtual ICollection<Siparisler> Siparislers { get; set; } = new List<Siparisler>();
 }

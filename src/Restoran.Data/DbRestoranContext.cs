@@ -16,7 +16,7 @@ public partial class DbRestoranContext : DbContext
     {
     }
 
-    public virtual DbSet<Adre> Adres { get; set; }
+    public virtual DbSet<Adres> Adres { get; set; }
 
     public virtual DbSet<Iade> Iades { get; set; }
 
@@ -51,7 +51,7 @@ public partial class DbRestoranContext : DbContext
     public virtual DbSet<Uyeler> Uyelers { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Adre>(entity =>
+        modelBuilder.Entity<Adres>(entity =>
         {
             entity.HasKey(e => e.AdresId).HasName("PK__Adres__DA8DEA6C0FC10825");
 
