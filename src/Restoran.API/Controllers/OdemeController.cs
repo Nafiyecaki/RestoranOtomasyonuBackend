@@ -1,7 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Restoran.API.Dtos;
 using Restoran.Data;
-using Restoran.Data.Entities; // Odeme entity'sini görebilmesi için
+using Restoran.Data.Entities;
 
 namespace Restoran.API.Controllers;
 
@@ -16,7 +17,7 @@ public class OdemeController : ControllerBase
         _context = context;
     }
 
-    // GET /api/odeme (Tüm ödemeleri listeler)
+    // GET /api/odeme
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
@@ -36,30 +37,70 @@ public class OdemeController : ControllerBase
         return Ok(odemeler);
     }
 
-    // GET /api/odeme/5 (Id'ye göre tek bir ödeme getirir)
+    // GET /api/odeme/5
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
         var odeme = await _context.Odemes
-            .FirstOrDefaultAsync(o => o.OdemeId == id);
+            .FindAsync(id);  // FindAsync primary key için daha performanslı
 
-        if (odeme == null) return NotFound();
+        if (odeme == null)
+            return NotFound($"Ödeme ID {id} bulunamadı.");
+
         return Ok(odeme);
     }
 
-    // POST /api/odeme (Yeni ödeme yapar / veritabanına kaydeder)
+    // POST /api/odeme
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] Odeme yeniOdeme)
+    public async Task<IActionResult> OdemeAl([FromBody] OdemeEkleDto dto)
     {
-        if (yeniOdeme == null) return BadRequest("Geçersiz ödeme verisi.");
+        // 1. Model doğrulama
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
 
-        // OdemeId veritabanında otomatik artan (identity) olduğu için buraya eklemiyoruz.
-        _context.Odemes.Add(yeniOdeme);
+        // 2. Sipariş kontrolü
+        var siparis = await _context.Siparislers.FindAsync(dto.SiparisId);
+        if (siparis == null)
+            return NotFound("Sipariş bulunamadı.");
 
-        // Değişiklikleri veritabanına kesin olarak işler (Save)
+        // 3. Sipariş tutarı geçerli mi?
+        if (!siparis.ToplamTutar.HasValue || siparis.ToplamTutar.Value <= 0)
+            return BadRequest("Siparişin geçerli bir tutarı yok.");
+
+        // 4. Personel geçerli mi?
+        var personelVar = await _context.Personels.AnyAsync(p => p.PersonelId == dto.PersonelId);
+        if (!personelVar)
+            return BadRequest("Geçersiz personel ID.");
+
+        // 5. Kasa geçerli mi?
+        var kasaVar = await _context.Kasas.AnyAsync(k => k.KasaId == dto.KasaId);
+        if (!kasaVar)
+            return BadRequest("Geçersiz kasa ID.");
+
+        // 6. Aynı siparişe daha önce ödeme alınmış mı?
+        var odenmis = await _context.Odemes.AnyAsync(o => o.SiparisId == dto.SiparisId);
+        if (odenmis)
+            return BadRequest("Bu siparişin ödemesi zaten alınmış.");
+
+        // 7. Yeni ödeme kaydı oluştur (tutar siparişten alınır)
+        var odeme = new Odeme
+        {
+            SiparisId = dto.SiparisId,
+            OdemeTipi = dto.OdemeTipi,
+            OdemeTutari = siparis.ToplamTutar.Value,
+            OdemeTarihi = DateTime.UtcNow,          // UTC kullan
+            PersonelId = dto.PersonelId,
+            KasaId = dto.KasaId
+        };
+
+        _context.Odemes.Add(odeme);
         await _context.SaveChangesAsync();
 
-        // Başarılı olduktan sonra hem 201 Created döner hem de eklenen veriyi gösterir
-        return CreatedAtAction(nameof(GetById), new { id = yeniOdeme.OdemeId }, yeniOdeme);
+        return Ok(new
+        {
+            Mesaj = "Ödeme alındı.",
+            odeme.OdemeId,
+            OdenenTutar = odeme.OdemeTutari
+        });
     }
 }
