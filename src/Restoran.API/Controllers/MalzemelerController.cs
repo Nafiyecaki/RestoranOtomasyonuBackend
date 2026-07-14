@@ -86,26 +86,56 @@ public class MalzemelerController : ControllerBase
         return Ok(new { Mesaj = "Malzeme eklendi.", malzeme.MalzemeId });
     }
 
-    // PATCH /api/Malzemeler/5/stok -> malzeme stoğu ekle/düş
-    [HttpPatch("{id}/stok")]
-    public async Task<IActionResult> StokGuncelle(int id, [FromBody] MalzemeStokGuncelleDto dto)
+    // PUT /api/Malzemeler/{id} -> malzemenin tüm bilgilerini güncelle
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Guncelle(int id, [FromBody] MalzemeEkleDto dto)
     {
+        if (dto == null) return BadRequest();
+
+        if (string.IsNullOrWhiteSpace(dto.MalzemeAdi))
+            return BadRequest("Malzeme adı boş olamaz.");
+
         var malzeme = await _context.Malzemelers.FindAsync(id);
-        if (malzeme == null) return NotFound("Malzeme bulunamadı.");
+        if (malzeme == null) return NotFound(new { Mesaj = "Malzeme bulunamadı." });
 
-        var yeniStok = malzeme.StokMiktari + dto.Miktar;
-        if (yeniStok < 0)
-            return BadRequest($"Yetersiz stok! Mevcut: {malzeme.StokMiktari} {malzeme.Birim}");
+        if (dto.StokMiktari < 0)
+            return BadRequest(new { Mesaj = "Stok miktarı negatif olamaz." });
 
-        malzeme.StokMiktari = yeniStok;
+        malzeme.MalzemeAdi = dto.MalzemeAdi.Trim();
+        malzeme.StokMiktari = dto.StokMiktari;
+        malzeme.Birim = dto.Birim;
+        malzeme.BirimMaliyeti = dto.BirimMaliyeti;
+
         await _context.SaveChangesAsync();
 
         return Ok(new
         {
-            Mesaj = "Malzeme stoğu güncellendi.",
+            Mesaj = "Malzeme güncellendi.",
+            malzeme.MalzemeId,
             malzeme.MalzemeAdi,
-            YeniStok = malzeme.StokMiktari,
-            malzeme.Birim
+            malzeme.StokMiktari,
+            malzeme.Birim,
+            malzeme.BirimMaliyeti
         });
     }
+
+    // DELETE /api/Malzemeler/{id}
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Sil(int id)
+    {
+        var malzeme = await _context.Malzemelers.FindAsync(id);
+        if (malzeme == null) return NotFound(new { Mesaj = "Malzeme bulunamadı." });
+
+        // GÜVENLİK KONTROLÜ: Reçetede kullanılan malzeme silinemez
+        var recetedeKullaniliyor = await _context.UrunRecetesis
+            .AnyAsync(r => r.MalzemeId == id);
+        if (recetedeKullaniliyor)
+            return BadRequest(new { Mesaj = "Bu malzeme ürün reçetelerinde kullanıldığı için silinemez. Önce ilgili reçetelerden çıkarın." });
+
+        _context.Malzemelers.Remove(malzeme);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Mesaj = "Malzeme silindi.", MalzemeId = id });
+    }
+
 }
