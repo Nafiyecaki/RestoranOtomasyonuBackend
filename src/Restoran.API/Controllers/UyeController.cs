@@ -94,4 +94,58 @@ public class UyelerController : ControllerBase
             uye.UyeEmail
         });
     }
+
+    // PUT /api/Uyeler/{id}
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Guncelle(int id, [FromBody] UyeGuncelleDto dto)
+    {
+        if (dto == null) return BadRequest();
+
+        var uye = await _context.Uyelers.FindAsync(id);
+        if (uye == null) return NotFound("Güncellenmek istenen üye bulunamadı.");
+
+        // GÜVENLİK KONTROLÜ: E-posta değiştiyse, yeni yazılan e-postanın başkasında olmadığından emin olalım
+        if (uye.UyeEmail != dto.UyeEmail)
+        {
+            var emailVarMi = await _context.Uyelers.AnyAsync(u => u.UyeEmail == dto.UyeEmail && u.UyeId != id);
+            if (emailVarMi) return BadRequest("Bu e-posta adresi başka bir üye tarafından zaten kullanılıyor.");
+        }
+
+        uye.UyeAdi = dto.UyeAdi;
+        uye.UyeSoyadi = dto.UyeSoyadi;
+        uye.UyeTelefon = dto.UyeTelefon;
+        uye.UyeEmail = dto.UyeEmail;
+        uye.Cinsiyet = dto.Cinsiyet;
+
+        // Şifre alanı boş gönderilmediyse yeni şifreyi ata
+        if (!string.IsNullOrEmpty(dto.UyeSifre))
+        {
+            uye.UyeSifre = dto.UyeSifre;
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(new { Mesaj = "Üye bilgileri başarıyla güncellendi." });
+    }
+
+    // DELETE /api/Uyeler/{id}
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Sil(int id)
+    {
+        var uye = await _context.Uyelers.FindAsync(id);
+        if (uye == null) return NotFound("Silinmek istenen üye bulunamadı.");
+
+        // İLİŞKİLİ VERİ TABLOSU GÜVENLİK KORUMASI:
+        // Eğer üyenin geçmişe dönük sipariş veya ödeme kaydı varsa SQL Server silmeye izin vermez.
+        // Bunu try-catch ile yakalayıp API'nin çökmesini engelliyoruz.
+        try
+        {
+            _context.Uyelers.Remove(uye);
+            await _context.SaveChangesAsync();
+            return Ok(new { Mesaj = "Üye sistemden başarıyla silindi." });
+        }
+        catch (DbUpdateException)
+        {
+            return BadRequest("Bu üyenin geçmişe dönük işlem kayıtları (Sipariş, Ödeme, Rezervasyon vb.) olduğu için doğrudan silinemez dayıko.");
+        }
+    }
 }

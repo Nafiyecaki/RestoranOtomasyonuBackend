@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using Restoran.API.Dtos;
 using Restoran.Data;
 using Restoran.Data.Entities;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Restoran.API.Controllers;
 
@@ -18,10 +21,9 @@ public class StokHareketleriController : ControllerBase
         _context = context;
     }
 
-    // GET /api/StokHareketleri -> tüm stok hareketleri (en yeni üstte)
+    // GET /api/StokHareketleri -> Tüm stok hareketleri (en yeni üstte)
     [HttpGet]
-   // [Authorize(Roles = "Yönetici,Aşçı")]
-
+    // [Authorize(Roles = "Yönetici,Aşçı")]
     public async Task<IActionResult> GetAll()
     {
         var hareketler = await _context.StokHarekets
@@ -43,24 +45,42 @@ public class StokHareketleriController : ControllerBase
         return Ok(hareketler);
     }
 
-    // POST /api/StokHareketleri/Ekle -> manuel stok giriş/çıkış/fire
+    // GET /api/StokHareketleri/5 -> Tek bir stok hareketinin detayı
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var hareket = await _context.StokHarekets
+            .Where(s => s.StokHareketId == id)
+            .Select(s => new
+            {
+                s.StokHareketId,
+                s.UrunId,
+                s.StokIslemTipi,
+                s.StokMiktari,
+                s.IsleminTarihSaati,
+                s.IsleminAciklamasi,
+                s.PersonelId,
+                UrunAdi = s.Urun != null ? s.Urun.UrunAdi : "Bilinmeyen Ürün"
+            })
+            .FirstOrDefaultAsync();
+
+        if (hareket == null) return NotFound("Stok hareketi bulunamadı.");
+        return Ok(hareket);
+    }
+
+    // POST /api/StokHareketleri/Ekle -> Manuel stok giriş/çıkış/fire
     [HttpPost("Ekle")]
     public async Task<IActionResult> AddStokHareket([FromBody] StokHareketEkleDto dto)
     {
         if (dto == null) return BadRequest("Veri boş olamaz.");
+        if (dto.StokMiktari <= 0) return BadRequest("Miktar 0'dan büyük olmalı.");
 
-        // Miktar validasyonu
-        if (dto.StokMiktari <= 0)
-            return BadRequest("Miktar 0'dan büyük olmalı.");
-
-        // İşlem tipini normalize et ("giriş" -> "GIRIS" gibi)
         var islemTipi = NormalizeIslemTipi(dto.StokIslemTipi);
 
-        // Ürünü kontrol et
         var urun = await _context.Urunlers.FindAsync(dto.UrunId);
         if (urun == null) return NotFound("Ürün bulunamadı.");
 
-        // Ürünün stok miktarını güncelle
+        // Stoğu güncelle
         if (islemTipi == "GIRIS")
         {
             urun.StokMiktari = (urun.StokMiktari ?? 0) + dto.StokMiktari;
@@ -68,7 +88,7 @@ public class StokHareketleriController : ControllerBase
         else if (islemTipi == "CIKIS" || islemTipi == "FIRE")
         {
             if ((urun.StokMiktari ?? 0) < dto.StokMiktari)
-                return BadRequest("Stokta bu kadar ürün yok, yetersiz stok!");
+                return BadRequest("Stokta yeterli ürün yok, işlem reddedildi!");
 
             urun.StokMiktari = (urun.StokMiktari ?? 0) - dto.StokMiktari;
         }
@@ -77,7 +97,6 @@ public class StokHareketleriController : ControllerBase
             return BadRequest("Geçersiz işlem tipi! (GIRIS, CIKIS veya FIRE olmalı)");
         }
 
-        // Hareket kaydını oluştur
         var yeniHareket = new StokHareket
         {
             UrunId = dto.UrunId,
@@ -93,13 +112,125 @@ public class StokHareketleriController : ControllerBase
 
         return Ok(new
         {
-            Mesaj = "Stok hareketi başarıyla işlendi ve ürün stoğu güncellendi.",
+            Mesaj = "Stok hareketi işlendi ve ürün stoğu güncellendi.",
             UrunAdi = urun.UrunAdi,
             YeniStok = urun.StokMiktari
         });
     }
 
-    // "giriş", "Çıkış" gibi girdileri veritabanı standardına çevirir
+    // PUT /api/StokHareketleri/{id} -> Stok hareketini ve ürün stoğunu günceller
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Guncelle(int id, [FromBody] StokHareketGuncelleDto dto)
+    {
+        if (dto == null) return BadRequest("Veri boş olamaz.");
+        if (dto.StokMiktari <= 0) return BadRequest("Miktar 0'dan büyük olmalı.");
+
+        var hareket = await _context.StokHarekets.FindAsync(id);
+        if (hareket == null) return NotFound("Güncellenmek istenen stok hareketi bulunamadı.");
+
+        var eskiUrun = await _context.Urunlers.FindAsync(hareket.UrunId);
+        if (eskiUrun == null) return NotFound("İlişkili orijinal ürün bulunamadı.");
+
+        // 1. ADIM: Eski stok hareketinin etkisini geri alalım (Rollback)
+        if (hareket.StokIslemTipi == "GIRIS")
+        {
+            eskiUrun.StokMiktari = (eskiUrun.StokMiktari ?? 0) - hareket.StokMiktari;
+        }
+        else if (hareket.StokIslemTipi == "CIKIS" || hareket.StokIslemTipi == "FIRE")
+        {
+            eskiUrun.StokMiktari = (eskiUrun.StokMiktari ?? 0) + hareket.StokMiktari;
+        }
+
+        // 2. ADIM: Eğer ürün değiştiyse hedef ürünü yükle, değişmediyse eski ürün üzerinden devam et
+        var hedefUrun = eskiUrun;
+        if (dto.UrunId != hareket.UrunId)
+        {
+            var yeniUrun = await _context.Urunlers.FindAsync(dto.UrunId);
+            if (yeniUrun == null)
+            {
+                // Değişikliği geri almak için eski haline kaydedip hata dönüyoruz
+                _context.Entry(eskiUrun).State = EntityState.Unchanged;
+                return NotFound("Yeni seçilen ürün bulunamadı.");
+            }
+            hedefUrun = yeniUrun;
+        }
+
+        // 3. ADIM: Yeni hareket tipine göre stoğu güncelle
+        var yeniIslemTipi = NormalizeIslemTipi(dto.StokIslemTipi);
+        if (yeniIslemTipi == "GIRIS")
+        {
+            hedefUrun.StokMiktari = (hedefUrun.StokMiktari ?? 0) + dto.StokMiktari;
+        }
+        else if (yeniIslemTipi == "CIKIS" || yeniIslemTipi == "FIRE")
+        {
+            if ((hedefUrun.StokMiktari ?? 0) < dto.StokMiktari)
+            {
+                // Hata durumunda değişiklikleri iptal etmek için DB Context'i resetliyoruz
+                _context.Entry(eskiUrun).State = EntityState.Unchanged;
+                if (dto.UrunId != hareket.UrunId) _context.Entry(hedefUrun).State = EntityState.Unchanged;
+                return BadRequest("Yetersiz stok! Bu güncelleme yapıldığında stok negatife düşüyor.");
+            }
+            hedefUrun.StokMiktari = (hedefUrun.StokMiktari ?? 0) - dto.StokMiktari;
+        }
+        else
+        {
+            _context.Entry(eskiUrun).State = EntityState.Unchanged;
+            return BadRequest("Geçersiz işlem tipi!");
+        }
+
+        // 4. ADIM: Stok hareketi bilgilerini güncelle
+        hareket.UrunId = dto.UrunId;
+        hareket.StokIslemTipi = yeniIslemTipi;
+        hareket.StokMiktari = dto.StokMiktari;
+        hareket.IsleminAciklamasi = dto.IsleminAciklamasi;
+        hareket.PersonelId = dto.PersonelId;
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Mesaj = "Stok hareketi başarıyla güncellendi ve ürün stokları düzeltildi.",
+            UrunAdi = hedefUrun.UrunAdi,
+            YeniStok = hedefUrun.StokMiktari
+        });
+    }
+
+    // DELETE /api/StokHareketleri/{id} -> Hareketi siler ve ürün stoğunu eski haline getirir
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Sil(int id)
+    {
+        var hareket = await _context.StokHarekets.FindAsync(id);
+        if (hareket == null) return NotFound("Silinecek stok hareketi bulunamadı.");
+
+        var urun = await _context.Urunlers.FindAsync(hareket.UrunId);
+        if (urun != null)
+        {
+            // Silinen harekete göre stoğu eski haline getiriyoruz (Rollback)
+            if (hareket.StokIslemTipi == "GIRIS")
+            {
+                if ((urun.StokMiktari ?? 0) < hareket.StokMiktari)
+                {
+                    return BadRequest("Bu stok girişini silemeyiz dayıko! Çünkü silersek ürünün stoğu eksiye düşüyor.");
+                }
+                urun.StokMiktari = (urun.StokMiktari ?? 0) - hareket.StokMiktari;
+            }
+            else if (hareket.StokIslemTipi == "CIKIS" || hareket.StokIslemTipi == "FIRE")
+            {
+                urun.StokMiktari = (urun.StokMiktari ?? 0) + hareket.StokMiktari;
+            }
+        }
+
+        _context.StokHarekets.Remove(hareket);
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Mesaj = "Stok hareketi silindi, ürün stoğu eski durumuna döndürüldü.",
+            UrunAdi = urun?.UrunAdi ?? "Bilinmeyen Ürün",
+            MevcutStok = urun?.StokMiktari
+        });
+    }
+
     private static string NormalizeIslemTipi(string? tip)
     {
         if (string.IsNullOrWhiteSpace(tip)) return "";

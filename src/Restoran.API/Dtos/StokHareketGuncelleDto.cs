@@ -2,7 +2,7 @@
 
 namespace Restoran.API.Dtos;
 
-public class StokHareketEkleDto
+public class StokHareketGuncelleDto
 {
     [Required(ErrorMessage = "Ürün seçimi zorunludur.")]
     public int UrunId { get; set; }
