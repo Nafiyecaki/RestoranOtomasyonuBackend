@@ -32,7 +32,7 @@ public class UyelerController : ControllerBase
                 u.UyeEmail,
                 u.Cinsiyet,
                 u.KayitTarihi
-                // PRO TİP: Güvenlik için 'UyeSifre' alanını listelemeye dahil etmedik dayıko!
+                // PRO TİP: Güvenlik için 'UyeSifre' alanını listelemeye dahil etmedik!
             })
             .ToListAsync();
 
@@ -145,7 +145,7 @@ public class UyelerController : ControllerBase
         }
         catch (DbUpdateException)
         {
-            return BadRequest("Bu üyenin geçmişe dönük işlem kayıtları (Sipariş, Ödeme, Rezervasyon vb.) olduğu için doğrudan silinemez dayıko.");
+            return BadRequest("Bu üyenin geçmişe dönük işlem kayıtları (Sipariş, Ödeme, Rezervasyon vb.) olduğu için doğrudan silinemez.");
         }
     }
 }

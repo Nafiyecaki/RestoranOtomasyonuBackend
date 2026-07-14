@@ -106,7 +106,10 @@ public partial class DbRestoranContext : DbContext
             entity.Property(e => e.AcilisTarihi).HasColumnType("datetime");
             entity.Property(e => e.KapanisTarihi).HasColumnType("datetime");
             entity.Property(e => e.KasaDurumu).HasMaxLength(20);
+            entity.Property(e => e.AcilisBakiyesi).HasColumnType("decimal(10, 2)");
+            entity.Property(e => e.KapanisBakiyesi).HasColumnType("decimal(10, 2)");
             entity.Property(e => e.PersonelId).HasColumnName("PersonelID");
+
 
             entity.HasOne(d => d.Personel).WithMany(p => p.Kasas)
                 .HasForeignKey(d => d.PersonelId)
@@ -121,6 +124,7 @@ public partial class DbRestoranContext : DbContext
 
             entity.Property(e => e.KategoriId).HasColumnName("KategoriID");
             entity.Property(e => e.KategoriAdi).HasMaxLength(50);
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
         });
 
         modelBuilder.Entity<Malzemeler>(entity =>
@@ -192,6 +196,7 @@ public partial class DbRestoranContext : DbContext
             entity.Property(e => e.PersonelSoyadi).HasMaxLength(50);
             entity.Property(e => e.PersonelTelefon).HasMaxLength(15);
             entity.Property(e => e.RolId).HasColumnName("RolID");
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
 
             entity.HasOne(d => d.Rol).WithMany(p => p.Personels)
                 .HasForeignKey(d => d.RolId)
@@ -234,11 +239,16 @@ public partial class DbRestoranContext : DbContext
             entity.Property(e => e.RezervasyonTipi).HasMaxLength(20);
             entity.Property(e => e.TarihSaat).HasColumnType("datetime");
             entity.Property(e => e.Telefon).HasMaxLength(15);
+            entity.Property(e => e.UyeId).HasColumnName("UyeID");
 
             entity.HasOne(d => d.Masa).WithMany(p => p.Rezervasyons)
                 .HasForeignKey(d => d.MasaId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_Rezervasyon_Masa");
+
+            entity.HasOne(d => d.Uye).WithMany()
+                .HasForeignKey(d => d.UyeId)
+                .HasConstraintName("FK_Rezervasyon_Uyeler");
         });
 
         modelBuilder.Entity<Roller>(entity =>

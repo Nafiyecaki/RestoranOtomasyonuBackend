@@ -90,7 +90,7 @@ public class PersonelIzinController : ControllerBase
         // MANTIK KONTROLÜ: Bitiş tarihi başlangıçtan önce olamaz
         if (dto.IzinBitis < dto.IzinBaslangic)
         {
-            return BadRequest("İzin bitiş tarihi, başlangıç tarihinden önce olamaz dayıko.");
+            return BadRequest("İzin bitiş tarihi, başlangıç tarihinden önce olamaz.");
         }
 
         // GÜVENLİK KONTROLÜ: İzin yazılacak personel sistemde var mı?
@@ -135,7 +135,7 @@ public class PersonelIzinController : ControllerBase
         // MANTIK KONTROLÜ: Güncellenen bitiş tarihi başlangıçtan önce olamaz
         if (dto.IzinBitis < dto.IzinBaslangic)
         {
-            return BadRequest("İzin bitiş tarihi, başlangıç tarihinden önce olamaz dayıko.");
+            return BadRequest("İzin bitiş tarihi, başlangıç tarihinden önce olamaz.");
         }
 
         // GÜVENLİK KONTROLÜ: Yeni atanacak personel veritabanında mevcut mu?
@@ -156,7 +156,7 @@ public class PersonelIzinController : ControllerBase
     }
 
     // PUT /api/PersonelIzin/{id}/durum
-    // Sadece izin durumunu (Onaylandı, Reddedildi, Beklemede) güncellemek için (Yönetici Onay Paneli)
+    // Sadece izin durumunu güncellemek için (Yönetici Onay Paneli)
     [HttpPut("{id}/durum")]
     public async Task<IActionResult> DurumGuncelle(int id, [FromBody] IzinDurumGuncelleDto dto)
     {
@@ -165,10 +165,17 @@ public class PersonelIzinController : ControllerBase
         var izin = await _context.PersonelIzins.FindAsync(id);
         if (izin == null) return NotFound("Durumu güncellenmek istenen izin kaydı bulunamadı.");
 
-        izin.IzinDurumu = dto.IzinDurumu;
+        // Sadece tanımlı durumlar kabul edilir
+        var gecerliDurumlar = new[] { "BEKLEMEDE", "ONAYLANDI", "REDDEDILDI" };
+        var yeniDurum = dto.IzinDurumu?.ToUpper()?.Trim()
+            .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C');
+        if (string.IsNullOrEmpty(yeniDurum) || !gecerliDurumlar.Contains(yeniDurum))
+            return BadRequest(new { Mesaj = "Geçersiz izin durumu. Geçerli değerler: " + string.Join(", ", gecerliDurumlar) });
+
+        izin.IzinDurumu = yeniDurum;
 
         await _context.SaveChangesAsync();
-        return Ok(new { Mesaj = $"İzin durumu başarıyla '{dto.IzinDurumu}' olarak güncellendi." });
+        return Ok(new { Mesaj = $"İzin durumu başarıyla '{yeniDurum}' olarak güncellendi." });
     }
 
     // DELETE /api/PersonelIzin/{id}

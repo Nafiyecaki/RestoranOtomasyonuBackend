@@ -30,12 +30,13 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginDto dto)
     {
+        // Sadece aktif personel giriş yapabilir
         var personel = await _context.Personels
-            .Include(p => p.Rol)
-            .FirstOrDefaultAsync(p => p.KullaniciAdi == dto.KullaniciAdi);
+             .Include(p => p.Rol)
+             .FirstOrDefaultAsync(p => p.KullaniciAdi == dto.KullaniciAdi && p.IsActive == true);
 
-        // NOT: Test verisinde şifreler düz metin ("hash_..." formatında).
-        if (personel == null || personel.PersonelSifre != dto.Sifre)
+        // Şifre BCrypt.Verify ile hash üzerinden doğrulanır
+        if (personel == null || !BCrypt.Net.BCrypt.Verify(dto.Sifre, personel.PersonelSifre))
             return Unauthorized("Kullanıcı adı veya şifre hatalı.");
 
         var token = TokenUret(personel.PersonelId,
@@ -60,7 +61,7 @@ public class AuthController : ControllerBase
 
     // POST /api/Auth/register -> yeni kullanıcı kaydı
     [HttpPost("register")]
-    [AllowAnonymous]  
+    [AllowAnonymous]
     public async Task<IActionResult> Register([FromBody] RegisterDto dto)
     {
         if (dto == null) return BadRequest();
@@ -86,8 +87,9 @@ public class AuthController : ControllerBase
             PersonelAdi = dto.PersonelAdi,
             PersonelSoyadi = dto.PersonelSoyadi,
             KullaniciAdi = dto.KullaniciAdi,
-            PersonelSifre = dto.Sifre, // NOT: sunumdan önce hash'e geçirilecek
-            RolId = rolId
+            PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.Sifre), // şifre hash'lenerek saklanır
+            RolId = rolId,
+            IsActive = true
         };
 
         _context.Personels.Add(personel);
@@ -108,9 +110,10 @@ public class AuthController : ControllerBase
     {
         if (string.IsNullOrEmpty(dto?.RefreshToken)) return BadRequest();
 
+        // Sadece aktif personel oturum yenileyebilir
         var personel = await _context.Personels
             .Include(p => p.Rol)
-            .FirstOrDefaultAsync(p => p.RefreshToken == dto.RefreshToken);
+            .FirstOrDefaultAsync(p => p.RefreshToken == dto.RefreshToken && p.IsActive == true);
 
         if (personel == null || personel.RefreshTokenBitis < DateTime.Now)
             return Unauthorized(new { Mesaj = "Refresh token geçersiz veya süresi dolmuş. Tekrar giriş yapın." });
@@ -147,13 +150,13 @@ public class AuthController : ControllerBase
         var personel = await _context.Personels.FindAsync(personelId);
         if (personel == null) return NotFound();
 
-        if (personel.PersonelSifre != dto.EskiSifre)
+        if (!BCrypt.Net.BCrypt.Verify(dto.EskiSifre, personel.PersonelSifre))
             return BadRequest(new { Mesaj = "Mevcut şifre hatalı." });
 
         if (dto.YeniSifre.Length < 6)
             return BadRequest(new { Mesaj = "Yeni şifre en az 6 karakter olmalı." });
 
-        personel.PersonelSifre = dto.YeniSifre;
+        personel.PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.YeniSifre);
         // Güvenlik: şifre değişince tüm oturumlar düşer
         personel.RefreshToken = null;
         personel.RefreshTokenBitis = null;

@@ -12,5 +12,6 @@ public class RezervasyonGuncelleDto
     public string? Durum { get; set; }
     public string? Aciklama { get; set; }
     public int? MasaId { get; set; }
+    public int? UyeId { get; set; } // üye rezervasyonuysa dolu, telefonla gelen misafirse boş
     public string? RezervasyonTipi { get; set; }
 }

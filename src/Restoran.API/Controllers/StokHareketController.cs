@@ -210,7 +210,7 @@ public class StokHareketleriController : ControllerBase
             {
                 if ((urun.StokMiktari ?? 0) < hareket.StokMiktari)
                 {
-                    return BadRequest("Bu stok girişini silemeyiz dayıko! Çünkü silersek ürünün stoğu eksiye düşüyor.");
+                    return BadRequest("Bu stok girişini silemeyiz! Çünkü silersek ürünün stoğu eksiye düşüyor.");
                 }
                 urun.StokMiktari = (urun.StokMiktari ?? 0) - hareket.StokMiktari;
             }

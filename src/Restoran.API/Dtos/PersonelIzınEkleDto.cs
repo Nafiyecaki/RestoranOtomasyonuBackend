@@ -8,7 +8,7 @@ public class PersonelIzinEkleDto
     public DateOnly IzinBitis { get; set; }
 
     // Yeni eklenen izinler varsayılan olarak "Beklemede" (Onay bekliyor) düşsün
-    public string? IzinDurumu { get; set; } = "Beklemede";
+    public string? IzinDurumu { get; set; } = "BEKLEMEDE";
     public string? IzinAciklamasi { get; set; }
     public int? PersonelId { get; set; }
 }

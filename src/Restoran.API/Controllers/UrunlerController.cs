@@ -75,7 +75,7 @@ public class UrunlerController : ControllerBase
             var kategoriVarMi = await _context.Set<Kategori>().AnyAsync(k => k.KategoriId == dto.KategoriId);
             if (!kategoriVarMi)
             {
-                return BadRequest($"Gönderilen KategoriId ({dto.KategoriId}) sistemde tanýmlý deðil dayýko.");
+                return BadRequest($"Gönderilen KategoriId ({dto.KategoriId}) sistemde tanýmlý deðil.");
             }
         }
 
@@ -118,7 +118,7 @@ public class UrunlerController : ControllerBase
             var kategoriVarMi = await _context.Set<Kategori>().AnyAsync(k => k.KategoriId == dto.KategoriId);
             if (!kategoriVarMi)
             {
-                return BadRequest($"Gönderilen KategoriId ({dto.KategoriId}) geçerli bir kategori deðil dayýko.");
+                return BadRequest($"Gönderilen KategoriId ({dto.KategoriId}) geçerli bir kategori deðil.");
             }
         }
 
@@ -159,7 +159,7 @@ public class UrunlerController : ControllerBase
         {
             // ÝLÝÞKÝ KORUMASI: Bu ürün geçmiþ sipariþ detaylarýnda (SiparisDetay) kayýtlýysa SQL hata verir.
             // Bu hatayý yakalayýp kullanýcýya temiz bir dille aktarýyoruz.
-            return BadRequest("Bu ürün daha önce sipariþlerde kullanýldýðý için veritabanýndan fiziksel olarak silinemez dayýko! Silmek yerine stok miktarýný 0 yapabilir veya açýklamasýna 'Satýþta Deðil' yazabilirsin.");
+            return BadRequest("Bu ürün daha önce sipariþlerde kullanýldýðý için veritabanýndan fiziksel olarak silinemez! Silmek yerine stok miktarýný 0 yapabilir veya açýklamasýna 'Satýþta Deðil' yazabilirsin.");
         }
     }
 }

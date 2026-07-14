@@ -38,6 +38,7 @@ public class RezervasyonController : ControllerBase
                 r.Aciklama,
                 r.MasaId,
                 r.RezervasyonTipi,
+                r.UyeId,
                 MasaNo = r.Masa != null ? r.Masa.MasaNo : null
             })
             .ToListAsync();
@@ -64,6 +65,7 @@ public class RezervasyonController : ControllerBase
                 r.Aciklama,
                 r.MasaId,
                 r.RezervasyonTipi,
+                r.UyeId,
                 MasaNo = r.Masa != null ? r.Masa.MasaNo : null
             })
             .FirstOrDefaultAsync();
@@ -81,30 +83,36 @@ public class RezervasyonController : ControllerBase
         // 1. ZAMAN KONTROLÜ
         if (dto.TarihSaat < DateTime.Now)
         {
-            return BadRequest("Geçmiş bir tarihe veya saate rezervasyon oluşturulamaz dayıko.");
+            return BadRequest("Geçmiş bir tarihe veya saate rezervasyon oluşturulamaz.");
         }
 
         // 2. MASA ZORUNLULUK VE ENTEGRASYON KONTROLÜ
         if (!dto.MasaId.HasValue)
         {
-            return BadRequest("Rezervasyon işlemi için bir masa seçilmesi zorunludur dayıko.");
+            return BadRequest("Rezervasyon işlemi için bir masa seçilmesi zorunludur.");
         }
 
-        // MasaId artık kesinlikle değer içerdiği için güvenle .Value kullanabiliriz
         var masa = await _context.Masas.FindAsync(dto.MasaId.Value);
         if (masa == null) return BadRequest("Atanmak istenen masa sistemde bulunamadı.");
 
         // Aynı masaya aynı saat diliminde (±2 saat aralıkla) başka aktif rezervasyon kontrolü
         var cakismaVarMi = await _context.Rezervasyons.AnyAsync(r =>
             r.MasaId == dto.MasaId.Value &&
-            r.Durum != "İptal Edildi" && r.Durum != "Reddedildi" &&
+            r.Durum != "IPTAL" && r.Durum != "REDDEDILDI" &&
             r.TarihSaat >= dto.TarihSaat.AddHours(-2) &&
             r.TarihSaat <= dto.TarihSaat.AddHours(2)
         );
 
         if (cakismaVarMi)
         {
-            return BadRequest($"{masa.MasaNo} numaralı masa, belirtilen saat aralığında başka bir müşteriye rezerve edilmiş durumda dayıko.");
+            return BadRequest($"{masa.MasaNo} numaralı masa, belirtilen saat aralığında başka bir müşteriye rezerve edilmiş durumda.");
+        }
+
+        // Üye rezervasyonuysa üye gerçekten var mı?
+        if (dto.UyeId.HasValue)
+        {
+            var uyeVarMi = await _context.Uyelers.AnyAsync(u => u.UyeId == dto.UyeId);
+            if (!uyeVarMi) return NotFound("Rezervasyon yapılmak istenen üye bulunamadı.");
         }
 
         var rezervasyon = new Rezervasyon
@@ -114,11 +122,12 @@ public class RezervasyonController : ControllerBase
             Telefon = dto.Telefon,
             KisiSayisi = dto.KisiSayisi,
             TarihSaat = dto.TarihSaat,
-            Durum = dto.Durum ?? "Beklemede",
+            Durum = dto.Durum ?? "BEKLEMEDE",
             OlusturulmaTarihi = DateTime.Now,
             Aciklama = dto.Aciklama,
-            MasaId = dto.MasaId.Value, // .Value ile int? olan veriyi int yaptık (HATA ÇÖZÜLDÜ)
-            RezervasyonTipi = dto.RezervasyonTipi
+            MasaId = dto.MasaId.Value,
+            RezervasyonTipi = dto.RezervasyonTipi,
+            UyeId = dto.UyeId
         };
 
         _context.Rezervasyons.Add(rezervasyon);
@@ -146,42 +155,49 @@ public class RezervasyonController : ControllerBase
         // 1. ZAMAN KONTROLÜ
         if (dto.TarihSaat < DateTime.Now)
         {
-            return BadRequest("Geçmiş bir tarihe güncelleme yapılamaz dayıko.");
+            return BadRequest("Geçmiş bir tarihe güncelleme yapılamaz.");
         }
 
         // 2. MASA ZORUNLULUK KONTROLÜ
         if (!dto.MasaId.HasValue)
         {
-            return BadRequest("Güncelleme işlemi için geçerli bir masa ID girilmelidir dayıko.");
+            return BadRequest("Güncelleme işlemi için geçerli bir masa ID girilmelidir.");
         }
 
         var masa = await _context.Masas.FindAsync(dto.MasaId.Value);
         if (masa == null) return BadRequest("Atanmak istenen masa sistemde bulunamadı.");
 
-        // Güncellenen masada çakışma kontrolü (Kendisini hariç tutarak)
+        // Güncellenen masada çakışma kontrolü (kendisini hariç tutarak)
         var cakismaVarMi = await _context.Rezervasyons.AnyAsync(r =>
             r.MasaId == dto.MasaId.Value &&
             r.RezervasyonId != id &&
-            r.Durum != "İptal Edildi" && r.Durum != "Reddedildi" &&
+            r.Durum != "IPTAL" && r.Durum != "REDDEDILDI" &&
             r.TarihSaat >= dto.TarihSaat.AddHours(-2) &&
             r.TarihSaat <= dto.TarihSaat.AddHours(2)
         );
 
         if (cakismaVarMi)
         {
-            return BadRequest($"{masa.MasaNo} numaralı masa güncellemek istediğiniz saat diliminde doludur dayıko.");
+            return BadRequest($"{masa.MasaNo} numaralı masa güncellemek istediğiniz saat diliminde doludur.");
+        }
+
+        // Üye rezervasyonuysa üye gerçekten var mı?
+        if (dto.UyeId.HasValue)
+        {
+            var uyeVarMi = await _context.Uyelers.AnyAsync(u => u.UyeId == dto.UyeId);
+            if (!uyeVarMi) return NotFound("Rezervasyon yapılmak istenen üye bulunamadı.");
         }
 
         rezervasyon.MusteriAdi = dto.MusteriAdi;
         rezervasyon.MusteriSoyadi = dto.MusteriSoyadi;
         rezervasyon.Telefon = dto.Telefon;
-        // İsimlendirme hatası olmaması için modeldeki alan adını koru (KisiSayisi)
         rezervasyon.KisiSayisi = dto.KisiSayisi;
         rezervasyon.TarihSaat = dto.TarihSaat;
         rezervasyon.Durum = dto.Durum ?? rezervasyon.Durum;
         rezervasyon.Aciklama = dto.Aciklama;
-        rezervasyon.MasaId = dto.MasaId.Value; // .Value ile int? olan veriyi int yaptık (HATA ÇÖZÜLDÜ)
+        rezervasyon.MasaId = dto.MasaId.Value;
         rezervasyon.RezervasyonTipi = dto.RezervasyonTipi;
+        rezervasyon.UyeId = dto.UyeId;
 
         await _context.SaveChangesAsync();
         return Ok(new { Mesaj = "Rezervasyon bilgileri başarıyla güncellendi." });
@@ -196,10 +212,17 @@ public class RezervasyonController : ControllerBase
         var rezervasyon = await _context.Rezervasyons.FindAsync(id);
         if (rezervasyon == null) return NotFound("Durumu güncellenmek istenen rezervasyon bulunamadı.");
 
-        rezervasyon.Durum = dto.Durum;
+        // Sadece tanımlı durumlar kabul edilir
+        var gecerliDurumlar = new[] { "BEKLEMEDE", "ONAYLANDI", "IPTAL", "REDDEDILDI", "TAMAMLANDI" };
+        var yeniDurum = dto.Durum?.ToUpper()?.Trim()
+            .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C');
+        if (string.IsNullOrEmpty(yeniDurum) || !gecerliDurumlar.Contains(yeniDurum))
+            return BadRequest(new { Mesaj = "Geçersiz rezervasyon durumu. Geçerli değerler: " + string.Join(", ", gecerliDurumlar) });
+
+        rezervasyon.Durum = yeniDurum;
 
         await _context.SaveChangesAsync();
-        return Ok(new { Mesaj = $"Rezervasyon durumu başarıyla '{dto.Durum}' olarak güncellendi." });
+        return Ok(new { Mesaj = $"Rezervasyon durumu başarıyla '{yeniDurum}' olarak güncellendi." });
     }
 
     // DELETE /api/Rezervasyon/{id}
