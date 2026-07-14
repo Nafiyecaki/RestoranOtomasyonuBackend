@@ -75,6 +75,14 @@ public class PersonelController : ControllerBase
         var kullaniciAdiVarMi = await _context.Personels.AnyAsync(p => p.KullaniciAdi == dto.KullaniciAdi);
         if (kullaniciAdiVarMi) return BadRequest("Bu kullanıcı adı zaten alınmış.");
 
+        // İLİŞKİLİ TABLO KONTROLÜ: Seçilen RolId gerçekten Roller tablosunda var mı?
+        if (dto.RolId.HasValue)
+        {
+            // NOT: Context içindeki 'Rollers' adının altı çizilirse veritabanındaki Rol tablonun adına göre güncelle dayıko.
+            var rolVarMi = await _context.Rollers.AnyAsync(r => r.RolId == dto.RolId);
+            if (!rolVarMi) return BadRequest("Seçilen Rol veritabanında tanımlı değil!");
+        }
+
         var personel = new Personel
         {
             PersonelAdi = dto.PersonelAdi,
@@ -100,5 +108,72 @@ public class PersonelController : ControllerBase
             personel.PersonelSoyadi,
             personel.KullaniciAdi
         });
+    }
+
+    // PUT /api/Personel/{id}
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Guncelle(int id, [FromBody] PersonelGuncelleDto dto)
+    {
+        if (dto == null) return BadRequest();
+
+        var personel = await _context.Personels.FindAsync(id);
+        if (personel == null) return NotFound("Güncellenmek istenen personel bulunamadı.");
+
+        // 1. GÜVENLİK KONTROLÜ: Kullanıcı adı değiştiyse, yeni seçilen adın başkasında olmadığından emin olalım
+        if (personel.KullaniciAdi != dto.KullaniciAdi)
+        {
+            var kullaniciAdiVarMi = await _context.Personels.AnyAsync(p => p.KullaniciAdi == dto.KullaniciAdi && p.PersonelId != id);
+            if (kullaniciAdiVarMi) return BadRequest("Bu kullanıcı adı başka bir personel tarafından zaten kullanılıyor.");
+        }
+
+        // 2. İLİŞKİLİ TABLO KONTROLÜ: Atanmak istenen yeni RolId gerçekten Roller tablosunda mevcut mu?
+        if (dto.RolId.HasValue)
+        {
+            var rolVarMi = await _context.Rollers.AnyAsync(r => r.RolId == dto.RolId);
+            if (!rolVarMi) return BadRequest("Seçilen yeni Rol veritabanında tanımlı değil!");
+        }
+
+        personel.PersonelAdi = dto.PersonelAdi;
+        personel.PersonelSoyadi = dto.PersonelSoyadi;
+        personel.KullaniciAdi = dto.KullaniciAdi;
+        personel.PersonelTelefon = dto.PersonelTelefon;
+        personel.Cinsiyet = dto.Cinsiyet;
+
+        if (dto.IseBaslamaTarihi.HasValue)
+            personel.IseBaslamaTarihi = dto.IseBaslamaTarihi;
+
+        personel.Maas = dto.Maas;
+        personel.RolId = dto.RolId;
+
+        // Şifre alanı boş gönderilmediyse yeni şifreyi ata
+        if (!string.IsNullOrEmpty(dto.PersonelSifre))
+        {
+            personel.PersonelSifre = dto.PersonelSifre;
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(new { Mesaj = "Personel bilgileri başarıyla güncellendi." });
+    }
+
+    // DELETE /api/Personel/{id}
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Sil(int id)
+    {
+        var personel = await _context.Personels.FindAsync(id);
+        if (personel == null) return NotFound("Silinmek istenen personel bulunamadı.");
+
+        // İLİŞKİLİ VERİ TABLOSU GÜVENLİK KORUMASI:
+        // Eğer personelin geçmişe dönük izin talebi, iade işlemi, siparişi veya ödemesi varsa SQL silmeyi engeller.
+        // Bunu try-catch ile yakalayarak API'nin çökmesini (500 fırlatmasını) engelleyip kullanıcıya pro hata döneriz.
+        try
+        {
+            _context.Personels.Remove(personel);
+            await _context.SaveChangesAsync();
+            return Ok(new { Mesaj = "Personel sistemden başarıyla silindi." });
+        }
+        catch (DbUpdateException)
+        {
+            return BadRequest("Bu personelin sistemde ilişkili kayıtları (İade, İzin, Ödeme vb.) bulunduğu için doğrudan silinemez dayıko.");
+        }
     }
 }

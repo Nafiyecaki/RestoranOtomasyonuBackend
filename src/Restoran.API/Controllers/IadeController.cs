@@ -90,4 +90,36 @@ public class IadeController : ControllerBase
         });
     }
 
+
+    // PUT /api/Iade/{id}/durum
+    // İadeyi onaylamak, reddetmek veya durumunu değiştirmek için
+    [HttpPut("{id}/durum")]
+    public async Task<IActionResult> DurumGuncelle(int id, [FromBody] IadeDurumGuncelleDto dto)
+    {
+        if (dto == null) return BadRequest();
+
+        var iade = await _context.Iades.FindAsync(id);
+        if (iade == null) return NotFound("İade kaydı bulunamadı.");
+
+        // İade durumunu güncelle (Örn: "Onaylandı" veya "Reddedildi")
+        iade.IadeDurumu = dto.IadeDurumu;
+
+        await _context.SaveChangesAsync();
+        return Ok(new { Mesaj = $"İade durumu başarıyla '{dto.IadeDurumu}' olarak güncellendi." });
+    }
+
+    // DELETE /api/Iade/{id}
+    // Hatalı girilen bir iade kaydını sistemden tamamen kaldırmak veya iptal etmek için
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Sil(int id)
+    {
+        var iade = await _context.Iades.FindAsync(id);
+        if (iade == null) return NotFound("Silinmek istenen iade kaydı bulunamadı.");
+
+        _context.Iades.Remove(iade);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Mesaj = "İade kaydı sistemden başarıyla silindi." });
+    }
+
 }
