@@ -20,7 +20,7 @@ public class OdemeController : ControllerBase
 
     // GET /api/odeme
     [HttpGet]
-    [Authorize(Roles = "Yönetici,Garson,Kurye")]    // kurye kapıda tahsilat yapar!
+   // [Authorize(Roles = "Yönetici,Garson,Kurye")]    // kurye kapıda tahsilat yapar!
     public async Task<IActionResult> GetAll()
     {
         var odemeler = await _context.Odemes

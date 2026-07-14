@@ -18,7 +18,7 @@ public class RezervasyonController : ControllerBase
 
     // GET /api/rezervasyon
     [HttpGet]
-    [Authorize(Roles = "Yönetici,Garson")]
+    //[Authorize(Roles = "Yönetici,Garson")]
 
     public async Task<IActionResult> GetAll()
     {

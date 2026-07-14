@@ -18,7 +18,7 @@ public class UrunlerController : ControllerBase
 
     // GET /api/Urunler
     [HttpGet]
-    [Authorize]                                    // <-- EKLENDÝ: token'sýz giriþ yasak
+  //  [Authorize]                                    // <-- EKLENDÝ: token'sýz giriþ yasak
     public async Task<IActionResult> GetAll()
     {
         var urunler = await _context.Urunlers
@@ -38,7 +38,7 @@ public class UrunlerController : ControllerBase
 
     // GET /api/Urunler/5
     [HttpGet("{id}")]
-    [Authorize]                                    // <-- EKLENDÝ
+   // [Authorize]                                    // <-- EKLENDÝ
     public async Task<IActionResult> GetById(int id)
     {
         var urun = await _context.Urunlers

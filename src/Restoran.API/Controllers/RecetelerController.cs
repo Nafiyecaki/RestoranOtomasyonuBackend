@@ -18,7 +18,7 @@ public class RecetelerController : ControllerBase
 
     // GET /api/Receteler/urun/5 -> bir ürünün reçetesi + malzeme maliyeti
     [HttpGet("urun/{urunId}")]
-    [Authorize(Roles = "Yönetici,Aşçı")]        // <-- EKLE (reçeteyi aşçı da görsün)
+   // [Authorize(Roles = "Yönetici,Aşçı")]        // <-- EKLE (reçeteyi aşçı da görsün)
 
     public async Task<IActionResult> GetByUrun(int urunId)
     {
@@ -60,7 +60,7 @@ public class RecetelerController : ControllerBase
 
     // GET /api/Receteler/karlilik -> tüm ürünlerin kâr analizi (en kârlı üstte)
     [HttpGet("karlilik")]
-    [Authorize(Roles = "Yönetici")]             // <-- EKLE (kâr bilgisi sadece yönetici!)
+    //[Authorize(Roles = "Yönetici")]             // <-- EKLE (kâr bilgisi sadece yönetici!)
 
     public async Task<IActionResult> KarlilikAnalizi()
     {

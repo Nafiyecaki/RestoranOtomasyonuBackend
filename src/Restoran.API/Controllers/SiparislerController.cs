@@ -20,7 +20,7 @@ public class SiparislerController : ControllerBase
 
     // POST /api/siparisler -> yeni sipariş oluşturur
     [HttpPost]
-    [Authorize(Roles = "Yönetici,Garson")]      // <-- EKLE (siparişi garson açar)
+    //[Authorize(Roles = "Yönetici,Garson")]      // <-- EKLE (siparişi garson açar)
 
     public async Task<IActionResult> CreateOrder([FromBody] SiparisOlusturDto dto)
     {
@@ -73,7 +73,7 @@ public class SiparislerController : ControllerBase
 
     // GET /api/siparisler/5 -> tek siparişi detaylarıyla getirir
     [HttpGet("{id}")]
-    [Authorize]                                  // <-- EKLE (görmek için giriş yeterli)
+    //[Authorize]                                  // <-- EKLE (görmek için giriş yeterli)
 
     public async Task<IActionResult> GetById(int id)
     {

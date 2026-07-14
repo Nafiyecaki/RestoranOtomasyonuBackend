@@ -18,7 +18,7 @@ public class MasaController : ControllerBase
 
     // GET /api/masa
     [HttpGet] 
-    [Authorize]                                  // masaları herkes görür (garson ekranı)
+    //[Authorize]                                  // masaları herkes görür (garson ekranı)
                                                  // POST/PUT/DELETE varsa → [Authorize(Roles = "Yönetici")]  // masa tanımını yönetici değiştirir
                                                  // MasaDurumu güncelleme varsa → [Authorize(Roles = "Yönetici,Garson")]
     public async Task<IActionResult> GetAll()

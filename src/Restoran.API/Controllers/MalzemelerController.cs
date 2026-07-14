@@ -20,7 +20,7 @@ public class MalzemelerController : ControllerBase
 
     // GET /api/Malzemeler -> tüm malzemeler
     [HttpGet]
-    [Authorize(Roles = "Yönetici,Aşçı")]
+    //[Authorize(Roles = "Yönetici,Aşçı")]
 
     public async Task<IActionResult> GetAll()
     {

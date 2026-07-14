@@ -20,7 +20,7 @@ public class StokHareketleriController : ControllerBase
 
     // GET /api/StokHareketleri -> tüm stok hareketleri (en yeni üstte)
     [HttpGet]
-    [Authorize(Roles = "Yönetici,Aşçı")]
+   // [Authorize(Roles = "Yönetici,Aşçı")]
 
     public async Task<IActionResult> GetAll()
     {

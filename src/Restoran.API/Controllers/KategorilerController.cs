@@ -19,7 +19,7 @@ public class KategorilerController : ControllerBase
 
     // GET /api/Kategoriler
     [HttpGet]
-    [Authorize]                       // kategorileri herkes görür (menü için)
+   // [Authorize]                       // kategorileri herkes görür (menü için)
                                       // POST/PUT/DELETE varsa → [Authorize(Roles = "Yönetici")]
     public async Task<IActionResult> GetAll()
     {
