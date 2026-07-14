@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.Data;
 using Restoran.Data.Entities;
+using Restoran.API.Dtos;
 
 namespace Restoran.API.Controllers;
 
@@ -53,13 +54,77 @@ public class KategorilerController : ControllerBase
 
     // POST /api/Kategoriler
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] Kategori kategori)
+    // POST /api/Kategoriler
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] KategoriEkleDto dto)
     {
-        if (kategori == null) return BadRequest();
+        if (dto == null || string.IsNullOrWhiteSpace(dto.KategoriAdi))
+            return BadRequest(new { Mesaj = "Kategori adı boş olamaz." });
+
+        // Aynı isimde kategori var mı?
+        var adVarMi = await _context.Kategoris
+            .AnyAsync(k => k.KategoriAdi == dto.KategoriAdi.Trim());
+        if (adVarMi)
+            return Conflict(new { Mesaj = "Bu isimde bir kategori zaten var." });
+
+        var kategori = new Kategori
+        {
+            KategoriAdi = dto.KategoriAdi.Trim()
+        };
 
         _context.Kategoris.Add(kategori);
         await _context.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = kategori.KategoriId }, kategori);
+        return Ok(new
+        {
+            Mesaj = "Kategori eklendi.",
+            kategori.KategoriId,
+            kategori.KategoriAdi
+        });
+    }
+
+    // PUT /api/Kategoriler/{id}
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Guncelle(int id, [FromBody] KategoriEkleDto dto)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.KategoriAdi))
+            return BadRequest(new { Mesaj = "Kategori adı boş olamaz." });
+
+        var kategori = await _context.Kategoris.FindAsync(id);
+        if (kategori == null) return NotFound(new { Mesaj = "Kategori bulunamadı." });
+
+        // Yeni isim başka bir kategoride kullanılıyor mu?
+        var adVarMi = await _context.Kategoris
+            .AnyAsync(k => k.KategoriAdi == dto.KategoriAdi.Trim() && k.KategoriId != id);
+        if (adVarMi)
+            return Conflict(new { Mesaj = "Bu isimde başka bir kategori zaten var." });
+
+        kategori.KategoriAdi = dto.KategoriAdi.Trim();
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Mesaj = "Kategori güncellendi.",
+            kategori.KategoriId,
+            kategori.KategoriAdi
+        });
+    }
+
+    // DELETE /api/Kategoriler/{id}
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Sil(int id)
+    {
+        var kategori = await _context.Kategoris.FindAsync(id);
+        if (kategori == null) return NotFound(new { Mesaj = "Kategori bulunamadı." });
+
+        // İLİŞKİSEL SİLME KURALI: İçinde ürün olan kategori silinemez
+        var urunVarMi = await _context.Urunlers.AnyAsync(u => u.KategoriId == id);
+        if (urunVarMi)
+            return BadRequest(new { Mesaj = "Bu kategoriye bağlı ürünler var, silinemez. Önce ürünleri başka kategoriye taşıyın veya silin." });
+
+        _context.Kategoris.Remove(kategori);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Mesaj = "Kategori silindi.", KategoriId = id });
     }
 }

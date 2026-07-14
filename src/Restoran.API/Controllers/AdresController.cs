@@ -90,4 +90,47 @@ public class AdresController : ControllerBase
             adres.AdresTipi
         });
     }
+    // PUT /api/Adres/{id}
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Guncelle(int id, [FromBody] AdresEkleDto dto)
+    {
+        if (dto == null) return BadRequest();
+
+        var adres = await _context.Adres.FindAsync(id);
+        if (adres == null) return NotFound(new { Mesaj = "Adres bulunamadı." });
+
+        // GÜVENLİK KONTROLÜ: Üye değiştiriliyorsa yeni üye gerçekten var mı?
+        if (dto.UyeId.HasValue)
+        {
+            var uyeVarMi = await _context.Uyelers.AnyAsync(u => u.UyeId == dto.UyeId);
+            if (!uyeVarMi) return NotFound(new { Mesaj = "Adres tanımlanmak istenen üye bulunamadı." });
+        }
+
+        adres.AdresTipi = dto.AdresTipi;
+        adres.AcikAdres = dto.AcikAdres;
+        adres.TeslimatBolgesindeMi = dto.TeslimatBolgesindeMi;
+        adres.UyeId = dto.UyeId;
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Mesaj = "Adres başarıyla güncellendi.",
+            adres.AdresId,
+            adres.AdresTipi
+        });
+    }
+
+    // DELETE /api/Adres/{id}
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Sil(int id)
+    {
+        var adres = await _context.Adres.FindAsync(id);
+        if (adres == null) return NotFound(new { Mesaj = "Adres bulunamadı." });
+
+        _context.Adres.Remove(adres);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Mesaj = "Adres silindi.", AdresId = id });
+    }
 }

@@ -96,6 +96,11 @@ public class OdemeController : ControllerBase
         };
 
         _context.Odemes.Add(odeme);
+        // 8. Siparişin durumunu "Ödendi" yap
+        siparis.SiparisDurumu = "Ödendi";
+
+        _context.Odemes.Add(odeme);
+        await _context.SaveChangesAsync();
         await _context.SaveChangesAsync();
 
         return Ok(new
@@ -103,6 +108,69 @@ public class OdemeController : ControllerBase
             Mesaj = "Ödeme alındı.",
             odeme.OdemeId,
             OdenenTutar = odeme.OdemeTutari
+        });
+    }
+    // PUT /api/odeme/{id} -> ödeme bilgilerini güncelle (tutar hariç)
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Guncelle(int id, [FromBody] OdemeEkleDto dto)
+    {
+        if (dto == null) return BadRequest();
+
+        var odeme = await _context.Odemes.FindAsync(id);
+        if (odeme == null) return NotFound(new { Mesaj = "Ödeme bulunamadı." });
+
+        // Personel geçerli mi?
+        var personelVar = await _context.Personels.AnyAsync(p => p.PersonelId == dto.PersonelId);
+        if (!personelVar) return BadRequest(new { Mesaj = "Geçersiz personel ID." });
+
+        // Kasa geçerli mi?
+        var kasaVar = await _context.Kasas.AnyAsync(k => k.KasaId == dto.KasaId);
+        if (!kasaVar) return BadRequest(new { Mesaj = "Geçersiz kasa ID." });
+
+        // Sipariş değiştirilemez: ödeme hangi siparişe alındıysa ona bağlı kalır.
+        // Yanlış siparişe ödeme alındıysa doğru akış: ödemeyi sil, doğru siparişe yeniden al.
+        if (odeme.SiparisId != dto.SiparisId)
+            return BadRequest(new { Mesaj = "Ödemenin siparişi değiştirilemez. Ödemeyi silip doğru siparişe yeniden alın." });
+
+        odeme.OdemeTipi = dto.OdemeTipi;   // ör. Nakit -> Kredi Kartı düzeltmesi
+        odeme.PersonelId = dto.PersonelId;
+        odeme.KasaId = dto.KasaId;
+        // OdemeTutari bilerek güncellenmiyor: tutar her zaman siparişten gelir.
+        // OdemeTarihi de korunuyor.
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Mesaj = "Ödeme güncellendi.",
+            odeme.OdemeId,
+            odeme.OdemeTipi,
+            odeme.OdemeTutari
+        });
+    }
+
+    // DELETE /api/odeme/{id} -> ödemeyi iptal et, siparişi tekrar ödenmemiş yap
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Sil(int id)
+    {
+        var odeme = await _context.Odemes.FindAsync(id);
+        if (odeme == null) return NotFound(new { Mesaj = "Ödeme bulunamadı." });
+
+        // Siparişin durumunu geri al
+        var siparis = await _context.Siparislers.FindAsync(odeme.SiparisId);
+        if (siparis != null && siparis.SiparisDurumu == "Ödendi")
+        {
+            siparis.SiparisDurumu = "Tamamlandı"; // ödeme öncesi duruma dönüyor
+        }
+
+        _context.Odemes.Remove(odeme);
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Mesaj = "Ödeme silindi, sipariş tekrar ödenmemiş duruma alındı.",
+            OdemeId = id,
+            odeme.SiparisId
         });
     }
 }

@@ -20,7 +20,7 @@ public class KasaController : ControllerBase
 
     // GET /api/kasa
     [HttpGet]
-    [Authorize(Roles = "Yönetici")]                 // kasayı açma/kapatma yönetici işi
+   // [Authorize(Roles = "Yönetici")]                 // kasayı açma/kapatma yönetici işi
     public async Task<IActionResult> GetAll()
     {
         var kasalar = await _context.Kasas
@@ -86,5 +86,73 @@ public class KasaController : ControllerBase
             kasa.KasaDurumu,
             kasa.PersonelId
         });
+    }
+    // PUT /api/kasa/{id}/kapat
+    [HttpPut("{id}/kapat")]
+    //[Authorize(Roles = "Yönetici")]
+    public async Task<IActionResult> KasaKapat(int id)
+    {
+        var kasa = await _context.Kasas.FindAsync(id);
+        if (kasa == null) return NotFound(new { Mesaj = "Kasa bulunamadı." });
+
+        // GÜVENLİK KONTROLÜ: Zaten kapalı bir kasa tekrar kapatılamaz
+        if (kasa.KasaDurumu == "Kapalı")
+            return BadRequest(new { Mesaj = "Bu kasa zaten kapalı." });
+
+        kasa.KasaDurumu = "Kapalı";
+        kasa.KapanisTarihi = DateTime.Now; // Kapanış zamanı otomatik atanıyor
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Mesaj = "Kasa başarıyla kapatıldı.",
+            kasa.KasaId,
+            kasa.AcilisTarihi,
+            kasa.KapanisTarihi
+        });
+    }
+
+    // PUT /api/kasa/{id}
+    [HttpPut("{id}")]
+   // [Authorize(Roles = "Yönetici")]
+    public async Task<IActionResult> Guncelle(int id, [FromBody] KasaEkleDto dto)
+    {
+        if (dto == null) return BadRequest();
+
+        var kasa = await _context.Kasas.FindAsync(id);
+        if (kasa == null) return NotFound(new { Mesaj = "Kasa bulunamadı." });
+
+        kasa.KasaDurumu = dto.KasaDurumu;
+        kasa.PersonelId = dto.PersonelId;
+        // Açılış/kapanış tarihleri elle değiştirilmiyor; kapatma için /kapat endpoint'i kullanılmalı
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Mesaj = "Kasa bilgileri güncellendi.",
+            kasa.KasaId,
+            kasa.KasaDurumu,
+            kasa.PersonelId
+        });
+    }
+
+    // DELETE /api/kasa/{id}
+    [HttpDelete("{id}")]
+   // [Authorize(Roles = "Yönetici")]
+    public async Task<IActionResult> Sil(int id)
+    {
+        var kasa = await _context.Kasas.FindAsync(id);
+        if (kasa == null) return NotFound(new { Mesaj = "Kasa bulunamadı." });
+
+        // GÜVENLİK KONTROLÜ: Açık kasa silinemez, önce kapatılmalı
+        if (kasa.KasaDurumu == "Açık")
+            return BadRequest(new { Mesaj = "Açık bir kasa silinemez. Önce kasayı kapatın." });
+
+        _context.Kasas.Remove(kasa);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Mesaj = "Kasa kaydı silindi.", KasaId = id });
     }
 }
