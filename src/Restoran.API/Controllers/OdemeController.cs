@@ -20,7 +20,7 @@ public class OdemeController : ControllerBase
 
     // GET /api/odeme
     [HttpGet]
-   // [Authorize(Roles = "Yönetici,Garson,Kurye")]    // kurye kapıda tahsilat yapar!
+    // [Authorize(Roles = "Yönetici,Garson,Kurye")]    // kurye kapıda tahsilat yapar!
     public async Task<IActionResult> GetAll()
     {
         var odemeler = await _context.Odemes
@@ -95,12 +95,10 @@ public class OdemeController : ControllerBase
             KasaId = dto.KasaId
         };
 
-        _context.Odemes.Add(odeme);
-        // 8. Siparişin durumunu "Ödendi" yap
-        siparis.SiparisDurumu = "Ödendi";
+        // 8. Siparişin durumunu "ODENDI" yap
+        siparis.SiparisDurumu = "ODENDI";
 
         _context.Odemes.Add(odeme);
-        await _context.SaveChangesAsync();
         await _context.SaveChangesAsync();
 
         return Ok(new
@@ -110,6 +108,7 @@ public class OdemeController : ControllerBase
             OdenenTutar = odeme.OdemeTutari
         });
     }
+
     // PUT /api/odeme/{id} -> ödeme bilgilerini güncelle (tutar hariç)
     [HttpPut("{id}")]
     public async Task<IActionResult> Guncelle(int id, [FromBody] OdemeEkleDto dto)
@@ -156,11 +155,11 @@ public class OdemeController : ControllerBase
         var odeme = await _context.Odemes.FindAsync(id);
         if (odeme == null) return NotFound(new { Mesaj = "Ödeme bulunamadı." });
 
-        // Siparişin durumunu geri al
+        // Siparişin durumunu geri al (ödeme silindi -> tekrar ödeme alınabilir olmalı)
         var siparis = await _context.Siparislers.FindAsync(odeme.SiparisId);
-        if (siparis != null && siparis.SiparisDurumu == "Ödendi")
+        if (siparis != null && siparis.SiparisDurumu == "ODENDI")
         {
-            siparis.SiparisDurumu = "Tamamlandı"; // ödeme öncesi duruma dönüyor
+            siparis.SiparisDurumu = "BEKLEMEDE";
         }
 
         _context.Odemes.Remove(odeme);
