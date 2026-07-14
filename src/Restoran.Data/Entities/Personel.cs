@@ -9,6 +9,9 @@ public partial class Personel
 
     public string PersonelAdi { get; set; } = null!;
 
+    public string? RefreshToken { get; set; }
+    public DateTime? RefreshTokenBitis { get; set; }
+
     public string PersonelSoyadi { get; set; } = null!;
 
     public string KullaniciAdi { get; set; } = null!;
