@@ -22,20 +22,21 @@ public class PersonelController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         // EF Core çoğul adı genelde 'Personels' veya 'Personeller' olur. 
-        // Altı çizilirse context'indeki isme göre düzeltirsin dayıko.
+
         var personeller = await _context.Personels
-            .Select(p => new
-            {
-                p.PersonelId,
-                p.PersonelAdi,
-                p.PersonelSoyadi,
-                p.KullaniciAdi,
-                p.PersonelTelefon,
-                p.Cinsiyet,
-                p.IseBaslamaTarihi,
-                p.Maas,
-                p.RolId
-            })
+           .Where(p => p.IsActive == true)
+           .Select(p => new
+           {
+               p.PersonelId,
+               p.PersonelAdi,
+               p.PersonelSoyadi,
+               p.KullaniciAdi,
+               p.PersonelTelefon,
+               p.Cinsiyet,
+               p.IseBaslamaTarihi,
+               p.Maas,
+               p.RolId
+           })
             .ToListAsync();
 
         return Ok(personeller);
@@ -78,7 +79,6 @@ public class PersonelController : ControllerBase
         // İLİŞKİLİ TABLO KONTROLÜ: Seçilen RolId gerçekten Roller tablosunda var mı?
         if (dto.RolId.HasValue)
         {
-            // NOT: Context içindeki 'Rollers' adının altı çizilirse veritabanındaki Rol tablonun adına göre güncelle dayıko.
             var rolVarMi = await _context.Rollers.AnyAsync(r => r.RolId == dto.RolId);
             if (!rolVarMi) return BadRequest("Seçilen Rol veritabanında tanımlı değil!");
         }
@@ -88,13 +88,15 @@ public class PersonelController : ControllerBase
             PersonelAdi = dto.PersonelAdi,
             PersonelSoyadi = dto.PersonelSoyadi,
             KullaniciAdi = dto.KullaniciAdi,
-            PersonelSifre = dto.PersonelSifre, // İleride buraya şifre hashleme gelebilir
+            PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.PersonelSifre), // şifre hash'lenerek saklanır
             PersonelTelefon = dto.PersonelTelefon,
             Cinsiyet = dto.Cinsiyet,
             // Eğer işe başlama tarihi yollanmadıysa bugünün tarihini DateOnly olarak ata
             IseBaslamaTarihi = dto.IseBaslamaTarihi ?? DateOnly.FromDateTime(DateTime.Now),
             Maas = dto.Maas,
-            RolId = dto.RolId
+            RolId = dto.RolId,
+            IsActive = true
+
         };
 
         _context.Personels.Add(personel);
@@ -145,35 +147,34 @@ public class PersonelController : ControllerBase
         personel.Maas = dto.Maas;
         personel.RolId = dto.RolId;
 
-        // Şifre alanı boş gönderilmediyse yeni şifreyi ata
+        // Şifre alanı boş gönderilmediyse yeni şifreyi hash'leyerek ata
         if (!string.IsNullOrEmpty(dto.PersonelSifre))
         {
-            personel.PersonelSifre = dto.PersonelSifre;
+            personel.PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.PersonelSifre);
         }
 
         await _context.SaveChangesAsync();
         return Ok(new { Mesaj = "Personel bilgileri başarıyla güncellendi." });
     }
 
-    // DELETE /api/Personel/{id}
+    // DELETE /api/Personel/{id} -> SOFT DELETE: kayıt silinmez, pasife çekilir
     [HttpDelete("{id}")]
     public async Task<IActionResult> Sil(int id)
     {
         var personel = await _context.Personels.FindAsync(id);
         if (personel == null) return NotFound("Silinmek istenen personel bulunamadı.");
 
-        // İLİŞKİLİ VERİ TABLOSU GÜVENLİK KORUMASI:
-        // Eğer personelin geçmişe dönük izin talebi, iade işlemi, siparişi veya ödemesi varsa SQL silmeyi engeller.
-        // Bunu try-catch ile yakalayarak API'nin çökmesini (500 fırlatmasını) engelleyip kullanıcıya pro hata döneriz.
-        try
-        {
-            _context.Personels.Remove(personel);
-            await _context.SaveChangesAsync();
-            return Ok(new { Mesaj = "Personel sistemden başarıyla silindi." });
-        }
-        catch (DbUpdateException)
-        {
-            return BadRequest("Bu personelin sistemde ilişkili kayıtları (İade, İzin, Ödeme vb.) bulunduğu için doğrudan silinemez dayıko.");
-        }
+        if (personel.IsActive == false)
+            return BadRequest(new { Mesaj = "Bu personel zaten silinmiş (pasif) durumda." });
+
+        personel.IsActive = false;
+        personel.SilinmeTarihi = DateTime.Now;
+        // Pasif personelin oturumu da düşsün
+        personel.RefreshToken = null;
+        personel.RefreshTokenBitis = null;
+
+        await _context.SaveChangesAsync();
+        return Ok(new { Mesaj = "Personel silindi (pasife alındı).", PersonelId = id });
+
     }
 }

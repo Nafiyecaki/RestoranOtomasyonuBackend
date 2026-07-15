@@ -137,7 +137,7 @@ public class SiparislerController : ControllerBase
         // İŞ KURALI GÜVENLİĞİ: "TAMAMLANDI" veya zaten "IPTAL" olmuş siparişin içeriği değiştirilemez!
         if (siparis.SiparisDurumu == "TAMAMLANDI" || siparis.SiparisDurumu == "IPTAL")
         {
-            return BadRequest($"'{siparis.SiparisDurumu}' durumundaki bir siparişi güncelleyemezsin dayıko.");
+            return BadRequest($"'{siparis.SiparisDurumu}' durumundaki bir siparişi güncelleyemezsin.");
         }
 
         // Genel bilgileri güncelle
@@ -203,7 +203,7 @@ public class SiparislerController : ControllerBase
 
         if (siparis.SiparisDurumu == "TAMAMLANDI")
         {
-            return BadRequest("Teslim edilip ödemesi alınmış (TAMAMLANDI) bir siparişi iptal edemezsin dayıko.");
+            return BadRequest("Teslim edilip ödemesi alınmış (TAMAMLANDI) bir siparişi iptal edemezsin.");
         }
 
         siparis.SiparisDurumu = "IPTAL";
@@ -231,7 +231,7 @@ public class SiparislerController : ControllerBase
         }
         catch (DbUpdateException)
         {
-            return BadRequest("Bu siparişe bağlı fatura veya ödeme kaydı olduğu için fiziksel olarak silinemez, iptal etmeyi (PUT /iptal) deneyin dayıko.");
+            return BadRequest("Bu siparişe bağlı fatura veya ödeme kaydı olduğu için fiziksel olarak silinemez, iptal etmeyi (PUT /iptal) deneyin.");
         }
     }
 }

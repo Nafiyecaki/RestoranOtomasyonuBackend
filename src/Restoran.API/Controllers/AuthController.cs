@@ -30,9 +30,10 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginDto dto)
     {
+        // Sadece aktif personel giriş yapabilir
         var personel = await _context.Personels
-            .Include(p => p.Rol)
-            .FirstOrDefaultAsync(p => p.KullaniciAdi == dto.KullaniciAdi);
+             .Include(p => p.Rol)
+             .FirstOrDefaultAsync(p => p.KullaniciAdi == dto.KullaniciAdi && p.IsActive == true);
 
         // Şifre BCrypt.Verify ile hash üzerinden doğrulanır
         if (personel == null || !BCrypt.Net.BCrypt.Verify(dto.Sifre, personel.PersonelSifre))
@@ -87,7 +88,8 @@ public class AuthController : ControllerBase
             PersonelSoyadi = dto.PersonelSoyadi,
             KullaniciAdi = dto.KullaniciAdi,
             PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.Sifre), // şifre hash'lenerek saklanır
-            RolId = rolId
+            RolId = rolId,
+            IsActive = true
         };
 
         _context.Personels.Add(personel);
@@ -108,9 +110,10 @@ public class AuthController : ControllerBase
     {
         if (string.IsNullOrEmpty(dto?.RefreshToken)) return BadRequest();
 
+        // Sadece aktif personel oturum yenileyebilir
         var personel = await _context.Personels
             .Include(p => p.Rol)
-            .FirstOrDefaultAsync(p => p.RefreshToken == dto.RefreshToken);
+            .FirstOrDefaultAsync(p => p.RefreshToken == dto.RefreshToken && p.IsActive == true);
 
         if (personel == null || personel.RefreshTokenBitis < DateTime.Now)
             return Unauthorized(new { Mesaj = "Refresh token geçersiz veya süresi dolmuş. Tekrar giriş yapın." });

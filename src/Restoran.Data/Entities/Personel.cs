@@ -27,13 +27,16 @@ public partial class Personel
     public decimal? Maas { get; set; }
 
     public int? RolId { get; set; }
+    public bool? IsActive { get; set; }
+    public DateTime? SilinmeTarihi { get; set; }
+
 
     public virtual ICollection<Iade> Iades { get; set; } = new List<Iade>();
 
     public virtual ICollection<Kasa> Kasas { get; set; } = new List<Kasa>();
 
     public virtual ICollection<Odeme> Odemes { get; set; } = new List<Odeme>();
-
+   
     public virtual ICollection<PersonelIzin> PersonelIzins { get; set; } = new List<PersonelIzin>();
 
     public virtual Roller? Rol { get; set; }

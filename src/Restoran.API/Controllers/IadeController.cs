@@ -90,9 +90,6 @@ public class IadeController : ControllerBase
         });
     }
 
-
-    // PUT /api/Iade/{id}/durum
-    // İadeyi onaylamak, reddetmek veya durumunu değiştirmek için
     [HttpPut("{id}/durum")]
     public async Task<IActionResult> DurumGuncelle(int id, [FromBody] IadeDurumGuncelleDto dto)
     {
@@ -101,12 +98,19 @@ public class IadeController : ControllerBase
         var iade = await _context.Iades.FindAsync(id);
         if (iade == null) return NotFound("İade kaydı bulunamadı.");
 
-        // İade durumunu güncelle (Örn: "Onaylandı" veya "Reddedildi")
-        iade.IadeDurumu = dto.IadeDurumu;
+        // Sadece tanımlı durumlar kabul edilir
+        var gecerliDurumlar = new[] { "BEKLEMEDE", "ONAYLANDI", "REDDEDILDI" };
+        var yeniDurum = dto.IadeDurumu?.ToUpper()?.Trim()
+            .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C');
+        if (string.IsNullOrEmpty(yeniDurum) || !gecerliDurumlar.Contains(yeniDurum))
+            return BadRequest(new { Mesaj = "Geçersiz iade durumu. Geçerli değerler: " + string.Join(", ", gecerliDurumlar) });
 
+        iade.IadeDurumu = yeniDurum;
         await _context.SaveChangesAsync();
-        return Ok(new { Mesaj = $"İade durumu başarıyla '{dto.IadeDurumu}' olarak güncellendi." });
+
+        return Ok(new { Mesaj = $"İade durumu başarıyla '{yeniDurum}' olarak güncellendi." });
     }
+
 
     // DELETE /api/Iade/{id}
     // Hatalı girilen bir iade kaydını sistemden tamamen kaldırmak veya iptal etmek için

@@ -7,6 +7,9 @@ public partial class Kasa
 {
     public int KasaId { get; set; }
 
+    public decimal? AcilisBakiyesi { get; set; }
+    public decimal? KapanisBakiyesi { get; set; }
+
     public DateTime AcilisTarihi { get; set; }
 
     public DateTime? KapanisTarihi { get; set; }

@@ -94,7 +94,13 @@ public class OdemeController : ControllerBase
             PersonelId = dto.PersonelId,
             KasaId = dto.KasaId
         };
+        // 8. Siparişin durumunu "ODENDI" yap
+        siparis.SiparisDurumu = "ODENDI";
 
+        _context.Odemes.Add(odeme);
+        await _context.SaveChangesAsync();
+        _context.Odemes.Add(odeme);
+        // 8. Siparişin durumunu "Ödendi" yap
         // 8. Siparişin durumunu "ODENDI" yap
         siparis.SiparisDurumu = "ODENDI";
 
@@ -159,7 +165,7 @@ public class OdemeController : ControllerBase
         var siparis = await _context.Siparislers.FindAsync(odeme.SiparisId);
         if (siparis != null && siparis.SiparisDurumu == "ODENDI")
         {
-            siparis.SiparisDurumu = "BEKLEMEDE";
+            siparis.SiparisDurumu = "BEKLEMEDE"; // ödeme silindi, tekrar ödeme alınabilir
         }
 
         _context.Odemes.Remove(odeme);

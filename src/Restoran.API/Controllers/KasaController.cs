@@ -24,15 +24,17 @@ public class KasaController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         var kasalar = await _context.Kasas
-            .Select(k => new
-            {
-                k.KasaId,
-                k.AcilisTarihi,
-                k.KapanisTarihi,
-                k.KasaDurumu,
-                k.PersonelId
-            })
-            .ToListAsync();
+             .Select(k => new
+             {
+                 k.KasaId,
+                 k.AcilisTarihi,
+                 k.KapanisTarihi,
+                 k.KasaDurumu,
+                 k.PersonelId,
+                 k.AcilisBakiyesi,
+                 k.KapanisBakiyesi
+             })
+             .ToListAsync();
 
         return Ok(kasalar);
     }
@@ -72,7 +74,8 @@ public class KasaController : ControllerBase
             AcilisTarihi = DateTime.Now,  // Kasa şu an açılıyor
             KapanisTarihi = null,         // Yeni açıldığı için kapanış henüz yok
             KasaDurumu = dto.KasaDurumu,  // "Açık"
-            PersonelId = dto.PersonelId
+            PersonelId = dto.PersonelId,
+            AcilisBakiyesi = dto.AcilisBakiyesi ?? 0
         };
 
         _context.Kasas.Add(kasa);
@@ -90,7 +93,7 @@ public class KasaController : ControllerBase
     // PUT /api/kasa/{id}/kapat
     [HttpPut("{id}/kapat")]
     //[Authorize(Roles = "Yönetici")]
-    public async Task<IActionResult> KasaKapat(int id)
+    public async Task<IActionResult> KasaKapat(int id, [FromBody] KasaKapatDto dto)
     {
         var kasa = await _context.Kasas.FindAsync(id);
         if (kasa == null) return NotFound(new { Mesaj = "Kasa bulunamadı." });
@@ -100,7 +103,8 @@ public class KasaController : ControllerBase
             return BadRequest(new { Mesaj = "Bu kasa zaten kapalı." });
 
         kasa.KasaDurumu = "Kapalı";
-        kasa.KapanisTarihi = DateTime.Now; // Kapanış zamanı otomatik atanıyor
+        kasa.KapanisTarihi = DateTime.Now;
+        kasa.KapanisBakiyesi = dto?.KapanisBakiyesi; // gün sonu sayım tutarı
 
         await _context.SaveChangesAsync();
 
@@ -109,7 +113,9 @@ public class KasaController : ControllerBase
             Mesaj = "Kasa başarıyla kapatıldı.",
             kasa.KasaId,
             kasa.AcilisTarihi,
-            kasa.KapanisTarihi
+            kasa.KapanisTarihi,
+            kasa.AcilisBakiyesi,
+            kasa.KapanisBakiyesi
         });
     }
 

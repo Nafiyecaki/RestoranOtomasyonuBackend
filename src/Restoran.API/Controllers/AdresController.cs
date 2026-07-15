@@ -22,7 +22,7 @@ public class AdresController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         // EF Core çoğul adlandırmasına göre burası '_context.Adreses' veya '_context.Adres' olabilir.
-        // Altı çizilirse context dosendeki isme göre düzeltirsin dayıko.
+     
         var adresler = await _context.Adres
             .Select(a => new
             {

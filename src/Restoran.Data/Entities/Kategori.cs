@@ -6,6 +6,8 @@ namespace Restoran.Data.Entities;
 public partial class Kategori
 {
     public int KategoriId { get; set; }
+    public bool? IsActive { get; set; }
+    public DateTime? SilinmeTarihi { get; set; }
 
     public string KategoriAdi { get; set; } = null!;
 
