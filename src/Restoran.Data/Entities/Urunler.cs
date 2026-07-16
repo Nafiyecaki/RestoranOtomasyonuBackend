@@ -16,6 +16,8 @@ public partial class Urunler
     public string? Aciklamalar { get; set; }
 
     public int? KategoriId { get; set; }
+    public bool? IsActive { get; set; }
+    public DateTime? SilinmeTarihi { get; set; }
 
     public virtual ICollection<Iade> Iades { get; set; } = new List<Iade>();
 

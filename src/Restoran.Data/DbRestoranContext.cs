@@ -372,6 +372,7 @@ public partial class DbRestoranContext : DbContext
             entity.Property(e => e.KategoriId).HasColumnName("KategoriID");
             entity.Property(e => e.StokMiktari).HasDefaultValue(0);
             entity.Property(e => e.UrunAdi).HasMaxLength(100);
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
 
             entity.HasOne(d => d.Kategori).WithMany(p => p.Urunlers)
                 .HasForeignKey(d => d.KategoriId)
