@@ -60,6 +60,9 @@ public class OdemeController : ControllerBase
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
+        if (string.IsNullOrWhiteSpace(dto.OdemeTipi))
+            return BadRequest(new { Mesaj = "Ödeme tipi boş olamaz." });
+
         // 2. Sipariş kontrolü
         var siparis = await _context.Siparislers.FindAsync(dto.SiparisId);
         if (siparis == null)
@@ -94,15 +97,23 @@ public class OdemeController : ControllerBase
             PersonelId = dto.PersonelId,
             KasaId = dto.KasaId
         };
+
         // 8. Siparişin durumunu "ODENDI" yap
         siparis.SiparisDurumu = "ODENDI";
 
-        _context.Odemes.Add(odeme);
-        await _context.SaveChangesAsync();
-        _context.Odemes.Add(odeme);
-        // 8. Siparişin durumunu "Ödendi" yap
-        // 8. Siparişin durumunu "ODENDI" yap
-        siparis.SiparisDurumu = "ODENDI";
+        // 9. Masanın başka aktif siparişi yoksa masayı boşalt
+        if (siparis.MasaId.HasValue)
+        {
+            var baskaAktifVarMi = await _context.Siparislers.AnyAsync(s =>
+                s.MasaId == siparis.MasaId &&
+                s.SiparisId != dto.SiparisId &&
+                s.SiparisDurumu != "IPTAL" && s.SiparisDurumu != "TAMAMLANDI" && s.SiparisDurumu != "ODENDI");
+            if (!baskaAktifVarMi)
+            {
+                var masa = await _context.Masas.FindAsync(siparis.MasaId.Value);
+                if (masa != null) masa.MasaDurumu = "BOŞ";
+            }
+        }
 
         _context.Odemes.Add(odeme);
         await _context.SaveChangesAsync();
@@ -115,33 +126,29 @@ public class OdemeController : ControllerBase
         });
     }
 
-    // PUT /api/odeme/{id} -> ödeme bilgilerini güncelle (tutar hariç)
+    // PUT /api/odeme/{id} -> ödeme bilgilerini güncelle (tutar ve sipariş hariç)
     [HttpPut("{id}")]
-    public async Task<IActionResult> Guncelle(int id, [FromBody] OdemeEkleDto dto)
+    public async Task<IActionResult> Guncelle(int id, [FromBody] OdemeGuncelleDto dto)
     {
         if (dto == null) return BadRequest();
+
+        if (string.IsNullOrWhiteSpace(dto.OdemeTipi))
+            return BadRequest(new { Mesaj = "Ödeme tipi boş olamaz." });
 
         var odeme = await _context.Odemes.FindAsync(id);
         if (odeme == null) return NotFound(new { Mesaj = "Ödeme bulunamadı." });
 
-        // Personel geçerli mi?
-        var personelVar = await _context.Personels.AnyAsync(p => p.PersonelId == dto.PersonelId);
+        var personelVar = await _context.Personels.AnyAsync(p => p.PersonelId == dto.PersonelId && p.IsActive == true);
         if (!personelVar) return BadRequest(new { Mesaj = "Geçersiz personel ID." });
 
-        // Kasa geçerli mi?
         var kasaVar = await _context.Kasas.AnyAsync(k => k.KasaId == dto.KasaId);
         if (!kasaVar) return BadRequest(new { Mesaj = "Geçersiz kasa ID." });
 
-        // Sipariş değiştirilemez: ödeme hangi siparişe alındıysa ona bağlı kalır.
-        // Yanlış siparişe ödeme alındıysa doğru akış: ödemeyi sil, doğru siparişe yeniden al.
-        if (odeme.SiparisId != dto.SiparisId)
-            return BadRequest(new { Mesaj = "Ödemenin siparişi değiştirilemez. Ödemeyi silip doğru siparişe yeniden alın." });
-
-        odeme.OdemeTipi = dto.OdemeTipi;   // ör. Nakit -> Kredi Kartı düzeltmesi
+        odeme.OdemeTipi = dto.OdemeTipi.Trim();
         odeme.PersonelId = dto.PersonelId;
         odeme.KasaId = dto.KasaId;
-        // OdemeTutari bilerek güncellenmiyor: tutar her zaman siparişten gelir.
-        // OdemeTarihi de korunuyor.
+        // OdemeTutari güncellenmiyor: tutar her zaman siparişten gelir.
+        // SiparisId artık DTO'da yok: sipariş bağı değiştirilemez.
 
         await _context.SaveChangesAsync();
 

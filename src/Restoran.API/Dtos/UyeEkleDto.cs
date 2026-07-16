@@ -6,7 +6,6 @@ namespace Restoran.API.Dtos;
 public class UyeEkleDto
 {
     [Required(ErrorMessage = "Üye adı boş bırakılamaz.")]
-    public string UrunAdi { get; set; } = null!; // Not: Eğer entity'de 'UyeAdi' ise aşağıdakini kullan, orijinal kodundaki isimlendirmeye sadık kaldım:
 
     public string UyeAdi { get; set; } = null!;
     public string UyeSoyadi { get; set; } = null!;

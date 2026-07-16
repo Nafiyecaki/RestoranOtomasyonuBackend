@@ -80,6 +80,15 @@ public class SiparislerController : ControllerBase
         if (dto.Detaylar == null || !dto.Detaylar.Any())
             return BadRequest("Sipariş oluşturmak için en az bir ürün eklemelisiniz.");
 
+        // SALON siparişiyse masayı "DOLU" yap
+        if (dto.MasaId.HasValue)
+        {
+            var masa = await _context.Masas.FindAsync(dto.MasaId.Value);
+            if (masa == null)
+                return NotFound($"ID'si {dto.MasaId} olan masa bulunamadı.");
+            masa.MasaDurumu = "DOLU";
+        }
+
         var siparis = new Siparisler
         {
             SiparisTarihi = DateTime.Now,
@@ -134,10 +143,10 @@ public class SiparislerController : ControllerBase
 
         if (siparis == null) return NotFound("Güncellenmek istenen sipariş bulunamadı.");
 
-        // İŞ KURALI GÜVENLİĞİ: "TAMAMLANDI" veya zaten "IPTAL" olmuş siparişin içeriği değiştirilemez!
-        if (siparis.SiparisDurumu == "TAMAMLANDI" || siparis.SiparisDurumu == "IPTAL")
+        // İŞ KURALI: TAMAMLANDI, IPTAL veya ODENDI durumundaki siparişin içeriği değiştirilemez
+        if (siparis.SiparisDurumu == "TAMAMLANDI" || siparis.SiparisDurumu == "IPTAL" || siparis.SiparisDurumu == "ODENDI")
         {
-            return BadRequest($"'{siparis.SiparisDurumu}' durumundaki bir siparişi güncelleyemezsin.");
+            return BadRequest($"'{siparis.SiparisDurumu}' durumundaki bir sipariş güncellenemez.");
         }
 
         // Genel bilgileri güncelle
@@ -175,7 +184,7 @@ public class SiparislerController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
-        return Ok(new { Mesaj = "Sipariş detayları ve toplam tutarı başarıyla güncellendi.", SipariId = siparis.SiparisId, YeniToplamTutar = siparis.ToplamTutar });
+        return Ok(new { Mesaj = "Sipariş detayları ve toplam tutarı başarıyla güncellendi.", SiparisId = siparis.SiparisId, YeniToplamTutar = siparis.ToplamTutar });
     }
 
     // PUT /api/siparisler/5/durum -> Sipariş durumunu günceller (Mutfak & Kasa ekranları için)
@@ -187,11 +196,18 @@ public class SiparislerController : ControllerBase
         var siparis = await _context.Siparislers.FindAsync(id);
         if (siparis == null) return NotFound("Durumu güncellenecek sipariş bulunamadı.");
 
-        // Gelen durum bilgisini standardize etmek için büyük harfe çevirebiliriz
-        siparis.SiparisDurumu = dto.SiparisDurumu.ToUpper();
+        // Sadece tanımlı durumlar kabul edilir
+        // (ODENDI ödeme endpoint'inden, IPTAL iptal endpoint'inden atanır; elle atanamaz)
+        var gecerliDurumlar = new[] { "BEKLEMEDE", "HAZIRLANIYOR", "HAZIR", "TESLIM EDILDI" };
+        var yeniDurum = dto.SiparisDurumu?.ToUpper()?.Trim()
+            .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C');
+        if (string.IsNullOrEmpty(yeniDurum) || !gecerliDurumlar.Contains(yeniDurum))
+            return BadRequest(new { Mesaj = "Geçersiz sipariş durumu. Geçerli değerler: " + string.Join(", ", gecerliDurumlar) });
+
+        siparis.SiparisDurumu = yeniDurum;
 
         await _context.SaveChangesAsync();
-        return Ok(new { Mesaj = $"Sipariş durumu '{siparis.SiparisDurumu}' olarak güncellendi.", SiparisId = id });
+        return Ok(new { Mesaj = $"Sipariş durumu '{yeniDurum}' olarak güncellendi.", SiparisId = id });
     }
 
     // PUT /api/siparisler/5/iptal -> Siparişi tek tıkla hızlıca İPTAL durumuna çeker
@@ -201,12 +217,26 @@ public class SiparislerController : ControllerBase
         var siparis = await _context.Siparislers.FindAsync(id);
         if (siparis == null) return NotFound("İptal edilecek sipariş bulunamadı.");
 
-        if (siparis.SiparisDurumu == "TAMAMLANDI")
+        if (siparis.SiparisDurumu == "TAMAMLANDI" || siparis.SiparisDurumu == "ODENDI")
         {
-            return BadRequest("Teslim edilip ödemesi alınmış (TAMAMLANDI) bir siparişi iptal edemezsin.");
+            return BadRequest("Ödemesi alınmış veya tamamlanmış bir sipariş iptal edilemez.");
         }
 
         siparis.SiparisDurumu = "IPTAL";
+
+        // Masanın başka aktif siparişi yoksa masayı boşalt
+        if (siparis.MasaId.HasValue)
+        {
+            var baskaAktifVarMi = await _context.Siparislers.AnyAsync(s =>
+                s.MasaId == siparis.MasaId &&
+                s.SiparisId != id &&
+                s.SiparisDurumu != "IPTAL" && s.SiparisDurumu != "TAMAMLANDI" && s.SiparisDurumu != "ODENDI");
+            if (!baskaAktifVarMi)
+            {
+                var masa = await _context.Masas.FindAsync(siparis.MasaId.Value);
+                if (masa != null) masa.MasaDurumu = "BOŞ";
+            }
+        }
 
         await _context.SaveChangesAsync();
         return Ok(new { Mesaj = "Sipariş başarıyla iptal edildi.", SiparisId = id });

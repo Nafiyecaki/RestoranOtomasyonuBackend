@@ -80,6 +80,9 @@ public class StokHareketleriController : ControllerBase
         var urun = await _context.Urunlers.FindAsync(dto.UrunId);
         if (urun == null) return NotFound("Ürün bulunamadı.");
 
+        var personelVarMi = await _context.Personels.AnyAsync(p => p.PersonelId == dto.PersonelId && p.IsActive == true);
+        if (!personelVarMi) return BadRequest("Geçersiz personel ID.");
+
         // Stoğu güncelle
         if (islemTipi == "GIRIS")
         {
@@ -130,6 +133,9 @@ public class StokHareketleriController : ControllerBase
 
         var eskiUrun = await _context.Urunlers.FindAsync(hareket.UrunId);
         if (eskiUrun == null) return NotFound("İlişkili orijinal ürün bulunamadı.");
+
+        var personelVarMi = await _context.Personels.AnyAsync(p => p.PersonelId == dto.PersonelId && p.IsActive == true);
+        if (!personelVarMi) return BadRequest("Geçersiz personel ID.");
 
         // 1. ADIM: Eski stok hareketinin etkisini geri alalım (Rollback)
         if (hareket.StokIslemTipi == "GIRIS")
