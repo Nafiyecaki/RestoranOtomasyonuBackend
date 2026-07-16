@@ -10,6 +10,13 @@ using Microsoft.OpenApi.Models;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendPolicy", policy =>
+        policy.WithOrigins("http://localhost:3000", "http://localhost:5173")
+              .AllowAnyHeader()
+              .AllowAnyMethod());
+});
 
 // OpenAPI (Scalar) JWT Kilit Mekanizmasý Yapýlandýrmasý (.NET 9 Standartlarýnda)
 builder.Services.AddOpenApi(options =>
@@ -82,6 +89,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors("FrontendPolicy");
 
 app.UseAuthentication();   // Önce: Sen kimsin? (Kimlik Doðrulama)
 app.UseAuthorization();    // Sonra: Ne yapabilirsin? (Yetkilendirme)
