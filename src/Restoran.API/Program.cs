@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+ï»¿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -10,15 +10,20 @@ using Microsoft.OpenApi.Models;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+
+// âœ… CORS - TÃ¼m kaynaklara izin ver (GeliÅŸtirme iÃ§in)
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("FrontendPolicy", policy =>
-        policy.WithOrigins("http://localhost:3000", "http://localhost:5173")
-              .AllowAnyHeader()
-              .AllowAnyMethod());
+    options.AddPolicy("AllowAll",
+        policy =>
+        {
+            policy.AllowAnyOrigin()        // Her yerden gelen isteklere izin ver
+                  .AllowAnyMethod()        // TÃ¼m HTTP metodlarÄ±na izin ver (GET, POST, PUT, DELETE, vs.)
+                  .AllowAnyHeader();       // TÃ¼m header'lara izin ver
+        });
 });
 
-// OpenAPI (Scalar) JWT Kilit Mekanizması Yapılandırması (.NET 9 Standartlarında)
+// OpenAPI (Scalar) JWT Kilit MekanizmasÄ± YapÄ±landÄ±rmasÄ± (.NET 9 StandartlarÄ±nda)
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
@@ -30,7 +35,7 @@ builder.Services.AddOpenApi(options =>
                 Type = SecuritySchemeType.Http,
                 Scheme = "bearer",
                 BearerFormat = "JWT",
-                Description = "JWT Token değerinizi giriniz."
+                Description = "JWT Token deÄŸerinizi giriniz."
             }
         };
 
@@ -51,18 +56,18 @@ builder.Services.AddOpenApi(options =>
     });
 });
 
-// Veritabanı Bağlantısı ve Geçici Hata Toleransı (Retry Mekanizması)
+// VeritabanÄ± BaÄŸlantÄ±sÄ± ve GeÃ§ici Hata ToleransÄ± (Retry MekanizmasÄ±)
 builder.Services.AddDbContext<DbRestoranContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DbRestoran"),
         sqlOptions => sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,                          // Bağlantı koptuğunda 5 kez tekrar dener
-            maxRetryDelay: TimeSpan.FromSeconds(10),   // Denemeler arası 10 saniye bekler
+            maxRetryCount: 5,                          // BaÄŸlantÄ± koptuÄŸunda 5 kez tekrar dener
+            maxRetryDelay: TimeSpan.FromSeconds(10),   // Denemeler arasÄ± 10 saniye bekler
             errorNumbersToAdd: null
         )
     ));
 
-// JWT Kimlik Doğrulama Servisleri
+// JWT Kimlik DoÄŸrulama Servisleri
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -80,6 +85,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 var app = builder.Build();
+
+// Global Exception Middleware
 app.UseMiddleware<Restoran.API.Middleware.GlobalExceptionMiddleware>();
 
 if (app.Environment.IsDevelopment())
@@ -90,9 +97,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.UseCors("FrontendPolicy");
+// âœ… CORS - DOÄRU SIRALAMA ve DOÄRU POLICY
+app.UseCors("AllowAll");  // â† "FrontendPolicy" yerine "AllowAll" kullan
 
-app.UseAuthentication();   // Önce: Sen kimsin? (Kimlik Doğrulama)
+app.UseAuthentication();   // Ã–nce: Sen kimsin? (Kimlik DoÄŸrulama)
 app.UseAuthorization();    // Sonra: Ne yapabilirsin? (Yetkilendirme)
 
 app.MapControllers();
