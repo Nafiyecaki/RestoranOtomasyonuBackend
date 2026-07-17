@@ -39,7 +39,11 @@ public class AuthController : ControllerBase
             if (personel == null)
                 return Unauthorized(new { success = false, message = "Kullanıcı bulunamadı." });
 
-            // ✅ BCrypt KAPALI - Düz metin şifre kontrolü
+            // ⛔ BCrypt hash kontrolü (şimdilik kapalı - açmak için alttaki düz metin kontrolünü kapatıp bunu aç)
+            // if (!BCrypt.Net.BCrypt.Verify(dto.Sifre, personel.PersonelSifre))
+            //     return Unauthorized(new { success = false, message = "Şifre hatalı." });
+
+            // ✅ Düz metin şifre kontrolü (aktif)
             if (personel.PersonelSifre != dto.Sifre)
                 return Unauthorized(new { success = false, message = "Şifre hatalı." });
 
@@ -101,7 +105,13 @@ public class AuthController : ControllerBase
                 PersonelAdi = dto.PersonelAdi ?? "Bilinmiyor",
                 PersonelSoyadi = dto.PersonelSoyadi ?? "Bilinmiyor",
                 KullaniciAdi = dto.KullaniciAdi,
-                PersonelSifre = dto.Sifre,  // ✅ Düz metin kaydet (BCrypt yok)
+
+                // ⛔ BCrypt ile hash'leyerek kaydetme (şimdilik kapalı)
+                // PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.Sifre),
+
+                // ✅ Düz metin kaydet (aktif)
+                PersonelSifre = dto.Sifre,
+
                 RolId = rolId,
                 IsActive = true
             };
@@ -182,14 +192,23 @@ public class AuthController : ControllerBase
             if (personel == null)
                 return NotFound(new { success = false, message = "Kullanıcı bulunamadı." });
 
-            // ✅ BCrypt KAPALI - Düz metin kontrol
+            // ⛔ BCrypt hash kontrolü (şimdilik kapalı)
+            // if (!BCrypt.Net.BCrypt.Verify(dto.EskiSifre, personel.PersonelSifre))
+            //     return BadRequest(new { success = false, message = "Mevcut şifre hatalı." });
+
+            // ✅ Düz metin kontrol (aktif)
             if (personel.PersonelSifre != dto.EskiSifre)
                 return BadRequest(new { success = false, message = "Mevcut şifre hatalı." });
 
             if (dto.YeniSifre.Length < 6)
                 return BadRequest(new { success = false, message = "Yeni şifre en az 6 karakter olmalı." });
 
-            personel.PersonelSifre = dto.YeniSifre;  // ✅ Düz metin kaydet
+            // ⛔ Yeni şifreyi BCrypt ile hash'leyerek kaydetme (şimdilik kapalı)
+            // personel.PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.YeniSifre);
+
+            // ✅ Düz metin kaydet (aktif)
+            personel.PersonelSifre = dto.YeniSifre;
+
             personel.RefreshToken = null;
             personel.RefreshTokenBitis = null;
             await _context.SaveChangesAsync();
