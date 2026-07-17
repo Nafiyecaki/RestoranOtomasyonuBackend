@@ -21,22 +21,22 @@ public class PersonelController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        // EF Core çoğul adı genelde 'Personels' veya 'Personeller' olur. 
-
         var personeller = await _context.Personels
-           .Where(p => p.IsActive == true)
-           .Select(p => new
-           {
-               p.PersonelId,
-               p.PersonelAdi,
-               p.PersonelSoyadi,
-               p.KullaniciAdi,
-               p.PersonelTelefon,
-               p.Cinsiyet,
-               p.IseBaslamaTarihi,
-               p.Maas,
-               p.RolId
-           })
+            .Include(p => p.Rol)  // ← ROL TABLOSUNU DAHİL ET!
+            .Where(p => p.IsActive == true)
+            .Select(p => new
+            {
+                p.PersonelId,
+                p.PersonelAdi,
+                p.PersonelSoyadi,
+                p.KullaniciAdi,
+                p.PersonelTelefon,
+                p.Cinsiyet,
+                p.IseBaslamaTarihi,
+                p.Maas,
+                p.RolId,
+                RolAdi = p.Rol != null ? p.Rol.RolAdi : "Bilinmiyor"  // ← ROL ADI
+            })
             .ToListAsync();
 
         return Ok(personeller);
@@ -47,6 +47,7 @@ public class PersonelController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var personel = await _context.Personels
+            .Include(p => p.Rol)  // ← ROL TABLOSUNU DAHİL ET!
             .Where(p => p.PersonelId == id)
             .Select(p => new
             {
@@ -58,7 +59,8 @@ public class PersonelController : ControllerBase
                 p.Cinsiyet,
                 p.IseBaslamaTarihi,
                 p.Maas,
-                p.RolId
+                p.RolId,
+                RolAdi = p.Rol != null ? p.Rol.RolAdi : "Bilinmiyor"  // ← ROL ADI
             })
             .FirstOrDefaultAsync();
 
@@ -72,11 +74,9 @@ public class PersonelController : ControllerBase
     {
         if (dto == null) return BadRequest();
 
-        // GÜVENLİK KONTROLÜ: Aynı kullanıcı adına sahip başka personel var mı?
         var kullaniciAdiVarMi = await _context.Personels.AnyAsync(p => p.KullaniciAdi == dto.KullaniciAdi);
         if (kullaniciAdiVarMi) return BadRequest("Bu kullanıcı adı zaten alınmış.");
 
-        // İLİŞKİLİ TABLO KONTROLÜ: Seçilen RolId gerçekten Roller tablosunda var mı?
         if (dto.RolId.HasValue)
         {
             var rolVarMi = await _context.Rollers.AnyAsync(r => r.RolId == dto.RolId);
@@ -88,21 +88,13 @@ public class PersonelController : ControllerBase
             PersonelAdi = dto.PersonelAdi,
             PersonelSoyadi = dto.PersonelSoyadi,
             KullaniciAdi = dto.KullaniciAdi,
-
-            // ⛔ BCrypt ile hash'leyerek kaydetme (şimdilik kapalı - AuthController ile uyumlu olması için)
-            // PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.PersonelSifre), // şifre hash'lenerek saklanır
-
-            // ✅ Düz metin kaydet (aktif)
             PersonelSifre = dto.PersonelSifre,
-
             PersonelTelefon = dto.PersonelTelefon,
             Cinsiyet = dto.Cinsiyet,
-            // Eğer işe başlama tarihi yollanmadıysa bugünün tarihini DateOnly olarak ata
             IseBaslamaTarihi = dto.IseBaslamaTarihi ?? DateOnly.FromDateTime(DateTime.Now),
             Maas = dto.Maas,
             RolId = dto.RolId,
             IsActive = true
-
         };
 
         _context.Personels.Add(personel);
@@ -114,7 +106,8 @@ public class PersonelController : ControllerBase
             personel.PersonelId,
             personel.PersonelAdi,
             personel.PersonelSoyadi,
-            personel.KullaniciAdi
+            personel.KullaniciAdi,
+            RolId = personel.RolId
         });
     }
 
@@ -127,14 +120,12 @@ public class PersonelController : ControllerBase
         var personel = await _context.Personels.FindAsync(id);
         if (personel == null) return NotFound("Güncellenmek istenen personel bulunamadı.");
 
-        // 1. GÜVENLİK KONTROLÜ: Kullanıcı adı değiştiyse, yeni seçilen adın başkasında olmadığından emin olalım
         if (personel.KullaniciAdi != dto.KullaniciAdi)
         {
             var kullaniciAdiVarMi = await _context.Personels.AnyAsync(p => p.KullaniciAdi == dto.KullaniciAdi && p.PersonelId != id);
             if (kullaniciAdiVarMi) return BadRequest("Bu kullanıcı adı başka bir personel tarafından zaten kullanılıyor.");
         }
 
-        // 2. İLİŞKİLİ TABLO KONTROLÜ: Atanmak istenen yeni RolId gerçekten Roller tablosunda mevcut mu?
         if (dto.RolId.HasValue)
         {
             var rolVarMi = await _context.Rollers.AnyAsync(r => r.RolId == dto.RolId);
@@ -153,13 +144,8 @@ public class PersonelController : ControllerBase
         personel.Maas = dto.Maas;
         personel.RolId = dto.RolId;
 
-        // Şifre alanı boş gönderilmediyse yeni şifreyi ata
         if (!string.IsNullOrEmpty(dto.PersonelSifre))
         {
-            // ⛔ BCrypt ile hash'leyerek kaydetme (şimdilik kapalı - AuthController ile uyumlu olması için)
-            // personel.PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.PersonelSifre);
-
-            // ✅ Düz metin kaydet (aktif)
             personel.PersonelSifre = dto.PersonelSifre;
         }
 
@@ -167,7 +153,7 @@ public class PersonelController : ControllerBase
         return Ok(new { Mesaj = "Personel bilgileri başarıyla güncellendi." });
     }
 
-    // DELETE /api/Personel/{id} -> SOFT DELETE: kayıt silinmez, pasife çekilir
+    // DELETE /api/Personel/{id}
     [HttpDelete("{id}")]
     public async Task<IActionResult> Sil(int id)
     {
@@ -179,12 +165,10 @@ public class PersonelController : ControllerBase
 
         personel.IsActive = false;
         personel.SilinmeTarihi = DateTime.Now;
-        // Pasif personelin oturumu da düşsün
         personel.RefreshToken = null;
         personel.RefreshTokenBitis = null;
 
         await _context.SaveChangesAsync();
         return Ok(new { Mesaj = "Personel silindi (pasife alındı).", PersonelId = id });
-
     }
 }

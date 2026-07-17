@@ -95,9 +95,12 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-app.UseHttpsRedirection();
-
-// ✅ CORS - DOĞRU SIRALAMA ve DOĞRU POLICY
+// ⚠️ HttpsRedirection KALDIRILDI: frontend http://localhost:5000 kullanıyor,
+// bu yönlendirme aktifken CORS preflight (OPTIONS) istekleri başarısız oluyordu.
+// Eğer ileride backend'i HTTPS üzerinden çalıştırmaya karar verirseniz,
+// frontend'deki API_URL'i de https://localhost:XXXX olarak güncelleyip
+// bu satırı geri açabilirsiniz.
+// app.UseHttpsRedirection();
 app.UseCors("AllowAll");  // ← "FrontendPolicy" yerine "AllowAll" kullan
 
 app.UseAuthentication();   // Önce: Sen kimsin? (Kimlik Doğrulama)

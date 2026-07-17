@@ -89,14 +89,17 @@ public class AuthController : ControllerBase
             if (dto.Sifre.Length < 6)
                 return BadRequest(new { success = false, message = "Şifre en az 6 karakter olmalı." });
 
+            // 🔥 Rol ID kontrolü (1:Admin, 2:Garson, 3:Aşçı, 4:Kurye)
+            if (dto.RolId < 1 || dto.RolId > 4)
+                return BadRequest(new { success = false, message = "Geçersiz rol ID. (1:Admin, 2:Garson, 3:Aşçı, 4:Kurye)" });
+
             var kullaniciAdiAlinmis = await _context.Personels
                 .AnyAsync(p => p.KullaniciAdi == dto.KullaniciAdi);
             if (kullaniciAdiAlinmis)
                 return Conflict(new { success = false, message = "Bu kullanıcı adı zaten kullanılıyor." });
 
-            var rolId = dto.RolId ?? 2;
             var rolVarMi = await _context.Rollers
-                .AnyAsync(r => r.RolId == rolId && r.RolDurumu == true);
+                .AnyAsync(r => r.RolId == dto.RolId && r.RolDurumu == true);
             if (!rolVarMi)
                 return NotFound(new { success = false, message = "Belirtilen rol bulunamadı veya pasif durumda." });
 
@@ -105,14 +108,8 @@ public class AuthController : ControllerBase
                 PersonelAdi = dto.PersonelAdi ?? "Bilinmiyor",
                 PersonelSoyadi = dto.PersonelSoyadi ?? "Bilinmiyor",
                 KullaniciAdi = dto.KullaniciAdi,
-
-                // ⛔ BCrypt ile hash'leyerek kaydetme (şimdilik kapalı)
-                // PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.Sifre),
-
-                // ✅ Düz metin kaydet (aktif)
                 PersonelSifre = dto.Sifre,
-
-                RolId = rolId,
+                RolId = dto.RolId, // ← RolId direkt atanıyor
                 IsActive = true
             };
 
@@ -124,7 +121,8 @@ public class AuthController : ControllerBase
                 success = true,
                 message = "Kayıt başarılı.",
                 PersonelId = personel.PersonelId,
-                KullaniciAdi = personel.KullaniciAdi
+                KullaniciAdi = personel.KullaniciAdi,
+                RolId = personel.RolId
             });
         }
         catch (Exception ex)
@@ -133,6 +131,10 @@ public class AuthController : ControllerBase
             return StatusCode(500, new { success = false, message = "Sunucu hatası: " + ex.Message });
         }
     }
+
+
+
+
 
     // POST /api/Auth/refresh
     [HttpPost("refresh")]
