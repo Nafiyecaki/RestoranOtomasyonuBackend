@@ -10,21 +10,12 @@ using Microsoft.OpenApi.Models;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-
-// GÜNCELLEME: Arkadaþlarýnýn dýþarýdan (farklý IP ve portlardan) eriþebilmesi için CORS politikasý
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendPolicy", policy =>
-    {
-        // Geliþtirme ortamýnda ekip arkadaþlarýnýn IP engeline takýlmamasý için tüm origin'lere izin veriyoruz
-        policy.SetIsOriginAllowed(_ => true)
+        policy.WithOrigins("http://localhost:3000", "http://localhost:5173")
               .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials(); // Auth token'larý ve cookie'ler için zorunlu
-
-        // TODO: Sunumdan ve canlýya (production) almadan önce sadece izin verilen origin'lere çekilmelidir:
-        // policy.WithOrigins("http://localhost:3000", "http://localhost:5173")
-    });
+              .AllowAnyMethod());
 });
 
 // OpenAPI (Scalar) JWT Kilit Mekanizmasý Yapýlandýrmasý (.NET 9 Standartlarýnda)
@@ -99,7 +90,6 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-// CORS Middleware'i yönlendirmeden hemen sonra tetiklenmeli
 app.UseCors("FrontendPolicy");
 
 app.UseAuthentication();   // Önce: Sen kimsin? (Kimlik Doðrulama)
