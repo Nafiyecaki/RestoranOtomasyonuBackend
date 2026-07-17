@@ -88,7 +88,13 @@ public class PersonelController : ControllerBase
             PersonelAdi = dto.PersonelAdi,
             PersonelSoyadi = dto.PersonelSoyadi,
             KullaniciAdi = dto.KullaniciAdi,
-            PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.PersonelSifre), // şifre hash'lenerek saklanır
+
+            // ⛔ BCrypt ile hash'leyerek kaydetme (şimdilik kapalı - AuthController ile uyumlu olması için)
+            // PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.PersonelSifre), // şifre hash'lenerek saklanır
+
+            // ✅ Düz metin kaydet (aktif)
+            PersonelSifre = dto.PersonelSifre,
+
             PersonelTelefon = dto.PersonelTelefon,
             Cinsiyet = dto.Cinsiyet,
             // Eğer işe başlama tarihi yollanmadıysa bugünün tarihini DateOnly olarak ata
@@ -147,10 +153,14 @@ public class PersonelController : ControllerBase
         personel.Maas = dto.Maas;
         personel.RolId = dto.RolId;
 
-        // Şifre alanı boş gönderilmediyse yeni şifreyi hash'leyerek ata
+        // Şifre alanı boş gönderilmediyse yeni şifreyi ata
         if (!string.IsNullOrEmpty(dto.PersonelSifre))
         {
-            personel.PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.PersonelSifre);
+            // ⛔ BCrypt ile hash'leyerek kaydetme (şimdilik kapalı - AuthController ile uyumlu olması için)
+            // personel.PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.PersonelSifre);
+
+            // ✅ Düz metin kaydet (aktif)
+            personel.PersonelSifre = dto.PersonelSifre;
         }
 
         await _context.SaveChangesAsync();
