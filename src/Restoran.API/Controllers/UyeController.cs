@@ -213,4 +213,4 @@ public class UyelerController : ControllerBase
         await _context.SaveChangesAsync();
         return Ok(new { Mesaj = "Üye pasif hale getirildi.", UyeId = id });
     }
-}
+} 
