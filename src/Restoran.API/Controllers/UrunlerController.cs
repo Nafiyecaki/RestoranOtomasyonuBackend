@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.Data;
-using Restoran.Data.Entities; // <-- ENTITY'LERÝN OLDUÐU KLASÖR (Urunler vb. için)
-using Restoran.API.Dtos;      // <-- DTO'LARIN OLDUÐU KLASÖR
+using Restoran.Data.Entities;
+using Restoran.API.Dtos;
 using Microsoft.AspNetCore.Authorization;
 using System.Threading.Tasks;
 using System.Linq;
@@ -20,12 +20,12 @@ public class UrunlerController : ControllerBase
         _context = context;
     }
 
-    // GET /api/Urunler -> Tüm ürünleri kategorisiyle birlikte listeler
+    // GET /api/Urunler -> Sadece AKTÝF ürünleri kategorisiyle birlikte listeler
     [HttpGet]
-    // [Authorize] 
     public async Task<IActionResult> GetAll()
     {
         var urunler = await _context.Urunlers
+            .Where(u => (u.IsActive == true || u.IsActive == null) && u.SilinmeTarihi == null) // SADECE AKTÝFLER
             .Include(u => u.Kategori)
             .Select(u => new
             {
@@ -34,19 +34,20 @@ public class UrunlerController : ControllerBase
                 u.Fiyat,
                 u.StokMiktari,
                 u.Aciklamalar,
+                IsActive = u.IsActive ?? true,
                 KategoriAdi = u.Kategori != null ? u.Kategori.KategoriAdi : null
             })
             .ToListAsync();
+
         return Ok(urunler);
     }
 
-    // GET /api/Urunler/5 -> Tek ürünü getirir
+    // GET /api/Urunler/5 -> Tek ürünü getirir (Aktifse)
     [HttpGet("{id}")]
-    // [Authorize] 
     public async Task<IActionResult> GetById(int id)
     {
         var urun = await _context.Urunlers
-            .Where(u => u.UrunId == id)
+            .Where(u => u.UrunId == id && (u.IsActive == true || u.IsActive == null) && u.SilinmeTarihi == null)
             .Select(u => new
             {
                 u.UrunId,
@@ -54,22 +55,21 @@ public class UrunlerController : ControllerBase
                 u.Fiyat,
                 u.StokMiktari,
                 u.Aciklamalar,
+                IsActive = u.IsActive ?? true,
                 KategoriAdi = u.Kategori != null ? u.Kategori.KategoriAdi : null
             })
             .FirstOrDefaultAsync();
 
-        if (urun == null) return NotFound("Aradýðýnýz ürün bulunamadý.");
+        if (urun == null) return NotFound("Aradýðýnýz ürün bulunamadý veya satýþta deðil.");
         return Ok(urun);
     }
 
     // POST /api/Urunler -> Yeni ürün ekler
     [HttpPost]
-    // [Authorize(Roles = "Yönetici")] // <-- Sadece yöneticiler menüye ekleme yapabilsin dersen açarsýn
     public async Task<IActionResult> Ekle([FromBody] UrunEkleDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
 
-        // KategoriId gönderildiyse veritabanýnda böyle bir kategorinin gerçekten var olup olmadýðýný kontrol edelim
         if (dto.KategoriId.HasValue)
         {
             var kategoriVarMi = await _context.Set<Kategori>().AnyAsync(k => k.KategoriId == dto.KategoriId);
@@ -79,20 +79,20 @@ public class UrunlerController : ControllerBase
             }
         }
 
-        // Yeni Ürün Entity nesnesini oluþturup eþliyoruz
         var yeniUrun = new Urunler
         {
             UrunAdi = dto.UrunAdi,
             Fiyat = dto.Fiyat,
             StokMiktari = dto.StokMiktari,
             Aciklamalar = dto.Aciklamalar,
-            KategoriId = dto.KategoriId
+            KategoriId = dto.KategoriId,
+            IsActive = true, // YENÝ ÜRÜN VARSAYILAN OLARAK AKTÝF GELÝR
+            SilinmeTarihi = null
         };
 
         await _context.Urunlers.AddAsync(yeniUrun);
         await _context.SaveChangesAsync();
 
-        // 201 Created döndürüyoruz ve yeni eklenen ürünün detay adresi ile objesini veriyoruz
         return CreatedAtAction(nameof(GetById), new { id = yeniUrun.UrunId }, new
         {
             Mesaj = "Ürün baþarýyla menüye eklendi.",
@@ -104,15 +104,13 @@ public class UrunlerController : ControllerBase
 
     // PUT /api/Urunler/5 -> Ürün bilgilerini günceller
     [HttpPut("{id}")]
-    // [Authorize(Roles = "Yönetici")]
     public async Task<IActionResult> Guncelle(int id, [FromBody] UrunGuncelleDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
 
         var urun = await _context.Urunlers.FindAsync(id);
-        if (urun == null) return NotFound("Güncellenmek istenen ürün bulunamadý.");
+        if (urun == null || urun.SilinmeTarihi != null) return NotFound("Güncellenmek istenen ürün bulunamadý.");
 
-        // Kategori doðrulamasý (Eðer kategori deðiþtirilmek istendiyse)
         if (dto.KategoriId.HasValue)
         {
             var kategoriVarMi = await _context.Set<Kategori>().AnyAsync(k => k.KategoriId == dto.KategoriId);
@@ -122,7 +120,6 @@ public class UrunlerController : ControllerBase
             }
         }
 
-        // Alanlarý güncelle
         urun.UrunAdi = dto.UrunAdi;
         urun.Fiyat = dto.Fiyat;
         urun.StokMiktari = dto.StokMiktari;
@@ -141,25 +138,20 @@ public class UrunlerController : ControllerBase
         });
     }
 
-    // DELETE /api/Urunler/5 -> Ürünü siler
+    // DELETE /api/Urunler/5 -> Ürünü fiziksel silmez, PASÝFE ÇEKER (Soft Delete)
     [HttpDelete("{id}")]
-    // [Authorize(Roles = "Yönetici")]
     public async Task<IActionResult> Sil(int id)
     {
         var urun = await _context.Urunlers.FindAsync(id);
-        if (urun == null) return NotFound("Silinmek istenen ürün bulunamadý.");
+        if (urun == null || urun.SilinmeTarihi != null)
+            return NotFound("Silinmek istenen ürün bulunamadý veya zaten pasif durumda.");
 
-        try
-        {
-            _context.Urunlers.Remove(urun);
-            await _context.SaveChangesAsync();
-            return Ok(new { Mesaj = "Ürün menüden baþarýyla silindi." });
-        }
-        catch (DbUpdateException)
-        {
-            // ÝLÝÞKÝ KORUMASI: Bu ürün geçmiþ sipariþ detaylarýnda (SiparisDetay) kayýtlýysa SQL hata verir.
-            // Bu hatayý yakalayýp kullanýcýya temiz bir dille aktarýyoruz.
-            return BadRequest("Bu ürün daha önce sipariþlerde kullanýldýðý için veritabanýndan fiziksel olarak silinemez! Silmek yerine stok miktarýný 0 yapabilir veya açýklamasýna 'Satýþta Deðil' yazabilirsin.");
-        }
+        // Fiziksel Silmek (Remove) yerine durumunu pasife çekiyoruz
+        urun.IsActive = false;
+        urun.SilinmeTarihi = DateTime.Now;
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Mesaj = "Ürün menüden kaldýrýldý ve pasif duruma getirildi." });
     }
 }
