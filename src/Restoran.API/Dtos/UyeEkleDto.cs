@@ -19,4 +19,8 @@ public class UyeEkleDto
 
     public string? UyeTelefon { get; set; }
     public string? Cinsiyet { get; set; }
+
+    public string AdresTipi { get; set; }
+    public string AcikAdres { get; set; }
+    public bool? TeslimatBolgesindeMi { get; set; }
 }
