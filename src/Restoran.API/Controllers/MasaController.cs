@@ -125,7 +125,48 @@ public class MasaController : ControllerBase
             masa.MasaDurumu
         });
     }
+    // POST /api/Masa/tasi
+    [HttpPost("tasi")]
+    public async Task<IActionResult> MasaTasi([FromBody] MasaTasiDto dto)
+    {
+        if (dto == null || dto.KaynakMasaId <= 0 || dto.HedefMasaId <= 0)
+            return BadRequest(new { Mesaj = "Kaynak ve hedef masa seçimi geçersiz." });
 
+        if (dto.KaynakMasaId == dto.HedefMasaId)
+            return BadRequest(new { Mesaj = "Kaynak masa ile hedef masa aynı olamaz." });
+
+        var kaynakMasa = await _context.Masas.FindAsync(dto.KaynakMasaId);
+        var hedefMasa = await _context.Masas.FindAsync(dto.HedefMasaId);
+
+        if (kaynakMasa == null || hedefMasa == null)
+            return NotFound(new { Mesaj = "Masalardan biri bulunamadı." });
+
+        if (kaynakMasa.MasaDurumu != "DOLU")
+            return BadRequest(new { Mesaj = "Kaynak masa dolu değil." });
+
+        if (hedefMasa.MasaDurumu == "DOLU")
+            return BadRequest(new { Mesaj = "Hedef masa zaten dolu." });
+
+        // Kaynak masadaki aktif siparişi bul ve hedef masaya aktar
+        var aktifSiparis = await _context.Siparislers
+            .FirstOrDefaultAsync(s => s.MasaId == dto.KaynakMasaId &&
+                                 s.SiparisDurumu != "ODENDI" &&
+                                 s.SiparisDurumu != "IPTAL" &&
+                                 s.SiparisDurumu != "TAMAMLANDI");
+
+        if (aktifSiparis != null)
+        {
+            aktifSiparis.MasaId = dto.HedefMasaId;
+        }
+
+        // Masaların durumlarını güncelle
+        kaynakMasa.MasaDurumu = "BOŞ";
+        hedefMasa.MasaDurumu = "DOLU";
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Mesaj = $"{kaynakMasa.MasaNo} masası başarıyla {hedefMasa.MasaNo} masasına taşındı." });
+    }
     // DELETE /api/masa/{id}
     [HttpDelete("{id}")]
     public async Task<IActionResult> Sil(int id)

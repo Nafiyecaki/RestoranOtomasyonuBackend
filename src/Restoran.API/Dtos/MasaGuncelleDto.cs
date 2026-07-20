@@ -10,4 +10,6 @@ public class MasaGuncelleDto
 
     [Required(ErrorMessage = "Masa durumu boş bırakılamaz.")]
     public string MasaDurumu { get; set; } = null!;
+
+    public int Kapasite { get; set; }
 }

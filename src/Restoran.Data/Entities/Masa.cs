@@ -9,6 +9,8 @@ public partial class Masa
 
     public string? MasaNo { get; set; }
 
+    public int? Kapasite { get; set; }
+
     public string? MasaDurumu { get; set; }
 
     public virtual ICollection<Rezervasyon> Rezervasyons { get; set; } = new List<Rezervasyon>();
