@@ -19,6 +19,8 @@ public class UyeGuncelleDto
     public string? UyeTelefon { get; set; }
     public string? Cinsiyet { get; set; }
 
+    public bool ? IsActive {  get; set; }
+
     // Şifre boş gelirse eski şifre veritabanında korunur, dolu gelirse ezilir
     public string? UyeSifre { get; set; }
 }

@@ -17,7 +17,7 @@ public class KuryeController : ControllerBase
         _context = context;
     }
 
-    
+    [HttpGet]
     // GET /api/Kurye/listele
     // Rolü "Kurye" olan personelleri listeler
     [HttpGet("listele")]

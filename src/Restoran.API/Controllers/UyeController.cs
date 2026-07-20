@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.VisualBasic;
 using Restoran.API.Dtos;
 using Restoran.Data;
 using Restoran.Data.Entities;
@@ -31,7 +32,8 @@ public class UyelerController : ControllerBase
                 u.UyeTelefon,
                 u.UyeEmail,
                 u.Cinsiyet,
-                u.KayitTarihi
+                u.KayitTarihi,
+                u.IsActive
                 // PRO TİP: Güvenlik için 'UyeSifre' alanını listelemeye dahil etmedik!
             })
             .ToListAsync();
@@ -53,7 +55,8 @@ public class UyelerController : ControllerBase
                 u.UyeTelefon,
                 u.UyeEmail,
                 u.Cinsiyet,
-                u.KayitTarihi
+                u.KayitTarihi,
+                u.IsActive
             })
             .FirstOrDefaultAsync();
 
@@ -79,7 +82,8 @@ public class UyelerController : ControllerBase
             UyeEmail = dto.UyeEmail,
             UyeSifre = dto.UyeSifre, // İleride buraya MD5/SHA256 şifre hashleme eklenebilir
             Cinsiyet = dto.Cinsiyet,
-            KayitTarihi = DateTime.Now // Kayıt anındaki sistem saati otomatik basılıyor
+            KayitTarihi = DateTime.Now ,// Kayıt anındaki sistem saati otomatik basılıyor
+            IsActive= true
         };
 
         _context.Uyelers.Add(uye);
@@ -123,6 +127,11 @@ public class UyelerController : ControllerBase
             uye.UyeSifre = dto.UyeSifre;
         }
 
+        if (dto.IsActive.HasValue)
+        {
+            uye.IsActive = dto.IsActive.Value;
+        }
+
         await _context.SaveChangesAsync();
         return Ok(new { Mesaj = "Üye bilgileri başarıyla güncellendi." });
     }
@@ -133,19 +142,12 @@ public class UyelerController : ControllerBase
     {
         var uye = await _context.Uyelers.FindAsync(id);
         if (uye == null) return NotFound("Silinmek istenen üye bulunamadı.");
+        uye.IsActive = false;
+        await _context.SaveChangesAsync();
+        return Ok(new {Mesaj="Üye pasif hale getirildi.",UyeId=id});
 
-        // İLİŞKİLİ VERİ TABLOSU GÜVENLİK KORUMASI:
-        // Eğer üyenin geçmişe dönük sipariş veya ödeme kaydı varsa SQL Server silmeye izin vermez.
-        // Bunu try-catch ile yakalayıp API'nin çökmesini engelliyoruz.
-        try
-        {
-            _context.Uyelers.Remove(uye);
-            await _context.SaveChangesAsync();
-            return Ok(new { Mesaj = "Üye sistemden başarıyla silindi." });
-        }
-        catch (DbUpdateException)
-        {
-            return BadRequest("Bu üyenin geçmişe dönük işlem kayıtları (Sipariş, Ödeme, Rezervasyon vb.) olduğu için doğrudan silinemez.");
+        
+       
+            
         }
     }
-}
