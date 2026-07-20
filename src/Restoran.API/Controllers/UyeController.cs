@@ -22,7 +22,6 @@ public class UyelerController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        // EF Core çoğul adlandırmasına göre context içinde 'Uyelers' olarak tanımlanmıştır.
         var uyeler = await _context.Uyelers
             .Select(u => new
             {
@@ -31,10 +30,9 @@ public class UyelerController : ControllerBase
                 u.UyeSoyadi,
                 u.UyeTelefon,
                 u.UyeEmail,
-                u.Cinsiyet,
-                u.KayitTarihi,
-                u.IsActive
-                // PRO TİP: Güvenlik için 'UyeSifre' alanını listelemeye dahil etmedik!
+                Cinsiyet = u.Cinsiyet ?? string.Empty,
+                KayitTarihi = u.KayitTarihi,          
+                IsActive = u.IsActive ?? false        
             })
             .ToListAsync();
 
