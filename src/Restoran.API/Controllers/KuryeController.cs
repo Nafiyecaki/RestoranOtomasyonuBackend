@@ -17,7 +17,6 @@ public class KuryeController : ControllerBase
         _context = context;
     }
 
-    [HttpGet]
     // GET /api/Kurye/listele
     // Rolü "Kurye" olan personelleri listeler
     [HttpGet("listele")]
@@ -40,7 +39,7 @@ public class KuryeController : ControllerBase
     }
 
     // POST /api/Kurye/siparis-ata
-    // Restoran panelinden siparişi kuryeye atar
+    // Restoran panelinden siparişi kuryeye atar (Durum: "Kurye Bekliyor")
     [HttpPost("siparis-ata")]
     public async Task<IActionResult> SiparisAta([FromBody] KuryeAtaDto dto)
     {
@@ -53,7 +52,7 @@ public class KuryeController : ControllerBase
         if (kurye == null) return NotFound("Kurye (Personel) bulunamadı.");
 
         siparis.PersonelId = kurye.PersonelId;
-        siparis.SiparisDurumu = "Yolda";
+        siparis.SiparisDurumu = "Kurye Bekliyor"; // 🔥 "Yolda" yerine "Kurye Bekliyor" atandı
 
         await _context.SaveChangesAsync();
 
@@ -61,14 +60,17 @@ public class KuryeController : ControllerBase
     }
 
     // GET /api/Kurye/{personelId}/aktif-siparisler
-    // Kuryenin üzerindeki teslim edilmemiş "Yolda" olan siparişleri ve müşteri adres bilgilerini getirir
+    // Kuryenin üzerindeki teslim edilmemiş (Yolda, Kurye Bekliyor, Hazır) siparişleri ve adres bilgilerini getirir
     [HttpGet("{personelId}/aktif-siparisler")]
     public async Task<IActionResult> GetKuryeAktifSiparisleri(int personelId)
     {
         var siparisler = await _context.Siparislers
             .Include(s => s.Uye)
                 .ThenInclude(u => u!.Adres)
-            .Where(s => s.PersonelId == personelId && s.SiparisDurumu == "Yolda")
+            .Where(s => s.PersonelId == personelId &&
+                       (s.SiparisDurumu == "Yolda" ||
+                        s.SiparisDurumu == "Kurye Bekliyor" ||
+                        s.SiparisDurumu == "Hazır")) // 🔥 Yeni durum kontrolleri eklendi
             .Select(s => new KuryeSiparisDto
             {
                 SiparisId = s.SiparisId,
