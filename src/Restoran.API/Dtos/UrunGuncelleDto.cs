@@ -16,4 +16,6 @@ public class UrunGuncelleDto
     public string? Aciklamalar { get; set; }
 
     public int? KategoriId { get; set; }
+
+    public bool? IsActive { get; set; } = true;
 }
