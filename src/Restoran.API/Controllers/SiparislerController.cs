@@ -4,9 +4,9 @@ using Restoran.API.Dtos;
 using Restoran.Data;
 using Restoran.Data.Entities;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Collections.Generic;
 
 namespace Restoran.API.Controllers;
 
@@ -21,7 +21,7 @@ public class SiparislerController : ControllerBase
         _context = context;
     }
 
-    // GET /api/siparisler -> Tüm siparişleri özet halinde listeler
+    // GET /api/siparisler -> Tüm siparişleri Admin ve Garson panelleri için eksiksiz getirir
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
@@ -30,6 +30,7 @@ public class SiparislerController : ControllerBase
             .Select(s => new
             {
                 s.SiparisId,
+                s.MasaId, // 🔑 Admin panelinin masayı eşleştirmesi için eklendi
                 s.SiparisDurumu,
                 s.SiparisTipi,
                 s.ToplamTutar,
@@ -37,7 +38,18 @@ public class SiparislerController : ControllerBase
                 MasaNo = s.Masa != null ? s.Masa.MasaNo : null,
                 UyeAdi = s.Uye != null ? s.Uye.UyeAdi + " " + s.Uye.UyeSoyadi : "Ziyaretçi",
                 PersonelAdi = s.Personel != null ? s.Personel.PersonelAdi + " " + s.Personel.PersonelSoyadi : null,
-                DetaySayisi = s.SiparisDetays.Count
+                DetaySayisi = s.SiparisDetays.Count,
+                // 🔑 Admin tarafında sipariş ürünlerinin detaylarının görünmesini sağlar
+                SiparisDetays = s.SiparisDetays.Select(d => new
+                {
+                    d.SiparisDetayId,
+                    d.UrunId,
+                    UrunAdi = d.Urun != null ? d.Urun.UrunAdi : "Ürün",
+                    d.Adet,
+                    d.BirimFiyat,
+                    SatirToplami = d.Adet * d.BirimFiyat,
+                    d.DetayNot
+                }).ToList()
             })
             .ToListAsync();
 
@@ -53,6 +65,7 @@ public class SiparislerController : ControllerBase
             .Select(s => new
             {
                 s.SiparisId,
+                s.MasaId,
                 s.SiparisDurumu,
                 s.SiparisTipi,
                 s.ToplamTutar,
@@ -60,8 +73,9 @@ public class SiparislerController : ControllerBase
                 MasaNo = s.Masa != null ? s.Masa.MasaNo : null,
                 Detaylar = s.SiparisDetays.Select(d => new
                 {
+                    d.SiparisDetayId,
                     d.UrunId,
-                    UrunAdi = d.Urun.UrunAdi,
+                    UrunAdi = d.Urun != null ? d.Urun.UrunAdi : "Ürün",
                     d.Adet,
                     d.BirimFiyat,
                     SatirToplami = d.Adet * d.BirimFiyat,
@@ -130,7 +144,72 @@ public class SiparislerController : ControllerBase
         });
     }
 
-    // PUT /api/siparisler/{id}/tamamla - SİPARİŞ TAMAMLAMA + OTOMATİK STOK DÜŞÜMÜ
+    // PUT /api/siparisler/5 -> Mevcut siparişi ve detaylarını günceller (Veritabanına tam kaydeder)
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Guncelle(int id, [FromBody] SiparisGuncelleDto dto)
+    {
+        if (dto == null) return BadRequest("Güncelleme verileri boş olamaz.");
+
+        var siparis = await _context.Siparislers
+            .Include(s => s.SiparisDetays)
+            .FirstOrDefaultAsync(s => s.SiparisId == id);
+
+        if (siparis == null) return NotFound("Güncellenmek istenen sipariş bulunamadı.");
+
+        if (siparis.SiparisDurumu == "TAMAMLANDI" || siparis.SiparisDurumu == "IPTAL" || siparis.SiparisDurumu == "ODENDI")
+        {
+            return BadRequest($"'{siparis.SiparisDurumu}' durumundaki bir sipariş güncellenemez.");
+        }
+
+        siparis.SiparisTipi = dto.SiparisTipi ?? siparis.SiparisTipi;
+        if (dto.UyeId.HasValue) siparis.UyeId = dto.UyeId;
+        if (dto.MasaId.HasValue) siparis.MasaId = dto.MasaId;
+        if (dto.PersonelId.HasValue) siparis.PersonelId = dto.PersonelId;
+
+        if (dto.Detaylar != null && dto.Detaylar.Any())
+        {
+            // 1. Eski detayları sil
+            _context.SiparisDetays.RemoveRange(siparis.SiparisDetays);
+
+            // 2. Yeni ürün kalemlerini oluştur ve tutarı hesapla
+            siparis.ToplamTutar = 0;
+            var yeniDetaylar = new List<SiparisDetay>();
+
+            foreach (var d in dto.Detaylar)
+            {
+                var urun = await _context.Urunlers.FindAsync(d.UrunId);
+                if (urun == null)
+                    return NotFound($"ID'si {d.UrunId} olan ürün sistemde bulunamadı.");
+
+                int adet = d.Adet <= 0 ? 1 : d.Adet;
+
+                yeniDetaylar.Add(new SiparisDetay
+                {
+                    SiparisId = id,
+                    UrunId = d.UrunId,
+                    Adet = adet,
+                    BirimFiyat = urun.Fiyat,
+                    DetayNot = d.DetayNot
+                });
+
+                siparis.ToplamTutar += adet * urun.Fiyat;
+            }
+
+            // 3. Veritabanına yeni detayları ekle
+            await _context.SiparisDetays.AddRangeAsync(yeniDetaylar);
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Mesaj = "Sipariş detayları ve toplam tutarı başarıyla güncellendi.",
+            SiparisId = siparis.SiparisId,
+            YeniToplamTutar = siparis.ToplamTutar
+        });
+    }
+
+    // PUT /api/siparisler/{id}/tamamla -> Siparişi tamamlar ve stoktan düşer
     [HttpPut("{id}/tamamla")]
     public async Task<IActionResult> SiparisTamamla(int id)
     {
@@ -244,7 +323,7 @@ public class SiparislerController : ControllerBase
         });
     }
 
-    // ✅ DÜZELTİLDİ: PUT /api/siparisler/{id}/durum -> Sipariş durumunu günceller
+    // PUT /api/siparisler/{id}/durum -> Sipariş durumunu günceller
     [HttpPut("{id}/durum")]
     public async Task<IActionResult> DurumGuncelle(int id, [FromBody] SiparisDurumGuncelleDto dto)
     {
@@ -253,7 +332,6 @@ public class SiparislerController : ControllerBase
         var siparis = await _context.Siparislers.FindAsync(id);
         if (siparis == null) return NotFound("Durumu güncellenecek sipariş bulunamadı.");
 
-        // ✅ Tüm durumlar eklendi (IADE dahil)
         var gecerliDurumlar = new[] {
             "BEKLEMEDE",
             "HAZIRLANIYOR",
@@ -284,7 +362,7 @@ public class SiparislerController : ControllerBase
         });
     }
 
-    // PUT /api/siparisler/5/iptal -> Siparişi iptal et
+    // PUT /api/siparisler/5/iptal -> Siparişi iptal eder
     [HttpPut("{id}/iptal")]
     public async Task<IActionResult> SiparisIptal(int id)
     {
@@ -315,58 +393,7 @@ public class SiparislerController : ControllerBase
         return Ok(new { Mesaj = "Sipariş başarıyla iptal edildi.", SiparisId = id });
     }
 
-    // PUT /api/siparisler/5 -> Mevcut siparişi ve detaylarını günceller
-    [HttpPut("{id}")]
-    public async Task<IActionResult> Guncelle(int id, [FromBody] SiparisGuncelleDto dto)
-    {
-        if (dto == null) return BadRequest();
-
-        var siparis = await _context.Siparislers
-            .Include(s => s.SiparisDetays)
-            .FirstOrDefaultAsync(s => s.SiparisId == id);
-
-        if (siparis == null) return NotFound("Güncellenmek istenen sipariş bulunamadı.");
-
-        if (siparis.SiparisDurumu == "TAMAMLANDI" || siparis.SiparisDurumu == "IPTAL" || siparis.SiparisDurumu == "ODENDI")
-        {
-            return BadRequest($"'{siparis.SiparisDurumu}' durumundaki bir sipariş güncellenemez.");
-        }
-
-        siparis.SiparisTipi = dto.SiparisTipi ?? siparis.SiparisTipi;
-        siparis.UyeId = dto.UyeId;
-        siparis.MasaId = dto.MasaId;
-        siparis.PersonelId = dto.PersonelId;
-
-        if (dto.Detaylar != null && dto.Detaylar.Any())
-        {
-            _context.SiparisDetays.RemoveRange(siparis.SiparisDetays);
-            siparis.ToplamTutar = 0;
-
-            foreach (var d in dto.Detaylar)
-            {
-                var urun = await _context.Urunlers.FindAsync(d.UrunId);
-                if (urun == null)
-                    return NotFound($"ID'si {d.UrunId} olan ürün sistemde bulunamadı.");
-
-                int adet = d.Adet <= 0 ? 1 : d.Adet;
-
-                siparis.SiparisDetays.Add(new SiparisDetay
-                {
-                    UrunId = d.UrunId,
-                    Adet = adet,
-                    BirimFiyat = urun.Fiyat,
-                    DetayNot = d.DetayNot
-                });
-
-                siparis.ToplamTutar += adet * urun.Fiyat;
-            }
-        }
-
-        await _context.SaveChangesAsync();
-        return Ok(new { Mesaj = "Sipariş detayları ve toplam tutarı başarıyla güncellendi.", SiparisId = siparis.SiparisId, YeniToplamTutar = siparis.ToplamTutar });
-    }
-
-    // DELETE /api/siparisler/5 -> Siparişi sil
+    // DELETE /api/siparisler/5 -> Siparişi siler
     [HttpDelete("{id}")]
     public async Task<IActionResult> Sil(int id)
     {
