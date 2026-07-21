@@ -114,6 +114,10 @@ public class SiparislerController : ControllerBase
             ToplamTutar = 0
         };
 
+        decimal toplamTutar = 0;
+        var siparisDetaylari = new List<SiparisDetay>();
+
+
         foreach (var d in dto.Detaylar)
         {
             var urun = await _context.Urunlers.FindAsync(d.UrunId);
@@ -121,91 +125,57 @@ public class SiparislerController : ControllerBase
                 return NotFound($"ID'si {d.UrunId} olan ürün sistemde bulunamadı.");
 
             int adet = d.Adet <= 0 ? 1 : d.Adet;
+            decimal birimFiyat = urun.Fiyat;
+            decimal satirToplami = adet * birimFiyat;
 
-            siparis.SiparisDetays.Add(new SiparisDetay
+            var detay = new SiparisDetay
             {
                 UrunId = d.UrunId,
                 Adet = adet,
-                BirimFiyat = urun.Fiyat,
-                DetayNot = d.DetayNot
-            });
+                BirimFiyat = birimFiyat,
+                DetayNot = d.DetayNot ?? ""
+            };
 
-            siparis.ToplamTutar += adet * urun.Fiyat;
+            siparisDetaylari.Add(detay);
+            toplamTutar += satirToplami;
         }
+
+        siparis.SiparisDetays = siparisDetaylari;
+        siparis.ToplamTutar = toplamTutar;
 
         await _context.Siparislers.AddAsync(siparis);
         await _context.SaveChangesAsync();
+
+        // Oluşturulan siparişi detaylarıyla birlikte geri döndür
+        var createdOrder = await _context.Siparislers
+            .Where(s => s.SiparisId == siparis.SiparisId)
+            .Select(s => new
+            {
+                s.SiparisId,
+                s.MasaId,
+                s.SiparisDurumu,
+                s.SiparisTipi,
+                s.ToplamTutar,
+                s.SiparisTarihi,
+                siparisUrunleri = s.SiparisDetays.Select(d => new
+                {
+                    d.SiparisDetayId,
+                    d.UrunId,
+                    urunAdi = d.Urun != null ? d.Urun.UrunAdi : "Ürün",
+                    d.Adet,
+                    d.BirimFiyat,
+                    satirToplami = d.Adet * d.BirimFiyat,
+                    d.DetayNot
+                }).ToList()
+            })
+            .FirstOrDefaultAsync();
 
         return Ok(new
         {
             Mesaj = "Sipariş ve detayları başarıyla oluşturuldu.",
             SiparisId = siparis.SiparisId,
-            HesaplananToplamTutar = siparis.ToplamTutar
-        });
-    }
-
-    // PUT /api/siparisler/5 -> Mevcut siparişi ve detaylarını günceller (Veritabanına tam kaydeder)
-    [HttpPut("{id}")]
-    public async Task<IActionResult> Guncelle(int id, [FromBody] SiparisGuncelleDto dto)
-    {
-        if (dto == null) return BadRequest("Güncelleme verileri boş olamaz.");
-
-        var siparis = await _context.Siparislers
-            .Include(s => s.SiparisDetays)
-            .FirstOrDefaultAsync(s => s.SiparisId == id);
-
-        if (siparis == null) return NotFound("Güncellenmek istenen sipariş bulunamadı.");
-
-        if (siparis.SiparisDurumu == "TAMAMLANDI" || siparis.SiparisDurumu == "IPTAL" || siparis.SiparisDurumu == "ODENDI")
-        {
-            return BadRequest($"'{siparis.SiparisDurumu}' durumundaki bir sipariş güncellenemez.");
-        }
-
-        siparis.SiparisTipi = dto.SiparisTipi ?? siparis.SiparisTipi;
-        if (dto.UyeId.HasValue) siparis.UyeId = dto.UyeId;
-        if (dto.MasaId.HasValue) siparis.MasaId = dto.MasaId;
-        if (dto.PersonelId.HasValue) siparis.PersonelId = dto.PersonelId;
-
-        if (dto.Detaylar != null && dto.Detaylar.Any())
-        {
-            // 1. Eski detayları sil
-            _context.SiparisDetays.RemoveRange(siparis.SiparisDetays);
-
-            // 2. Yeni ürün kalemlerini oluştur ve tutarı hesapla
-            siparis.ToplamTutar = 0;
-            var yeniDetaylar = new List<SiparisDetay>();
-
-            foreach (var d in dto.Detaylar)
-            {
-                var urun = await _context.Urunlers.FindAsync(d.UrunId);
-                if (urun == null)
-                    return NotFound($"ID'si {d.UrunId} olan ürün sistemde bulunamadı.");
-
-                int adet = d.Adet <= 0 ? 1 : d.Adet;
-
-                yeniDetaylar.Add(new SiparisDetay
-                {
-                    SiparisId = id,
-                    UrunId = d.UrunId,
-                    Adet = adet,
-                    BirimFiyat = urun.Fiyat,
-                    DetayNot = d.DetayNot
-                });
-
-                siparis.ToplamTutar += adet * urun.Fiyat;
-            }
-
-            // 3. Veritabanına yeni detayları ekle
-            await _context.SiparisDetays.AddRangeAsync(yeniDetaylar);
-        }
-
-        await _context.SaveChangesAsync();
-
-        return Ok(new
-        {
-            Mesaj = "Sipariş detayları ve toplam tutarı başarıyla güncellendi.",
-            SiparisId = siparis.SiparisId,
-            YeniToplamTutar = siparis.ToplamTutar
+            HesaplananToplamTutar = siparis.ToplamTutar,
+            Siparis = createdOrder
         });
     }
 

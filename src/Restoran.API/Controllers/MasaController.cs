@@ -31,26 +31,31 @@ public class MasaController : ControllerBase
                 m.MasaNo,
                 m.MasaDurumu,
                 m.Kapasite,
+                
 
                 aktifSiparis = _context.Siparislers
                     .Where(s =>
                         s.MasaId == m.MasaId &&
                         s.SiparisDurumu != "IPTAL" &&
-                        s.SiparisDurumu != "ODENDI")
+                        s.SiparisDurumu != "ODENDI" &&
+                        s.SiparisDurumu != "TAMAMLANDI")
+                    .OrderByDescending(s => s.SiparisTarihi)
                     .Select(s => new
                     {
                         siparisId = s.SiparisId,
                         toplam = s.ToplamTutar,
                         siparisDurumu = s.SiparisDurumu,
                         siparisTarihi = s.SiparisTarihi,
+                        siparisTipi = s.SiparisTipi,
 
                         siparisUrunleri = s.SiparisDetays.Select(d => new
                         {
                             urunId = d.UrunId,
-                            urunAdi = d.Urun.UrunAdi,
+                            urunAdi = d.Urun != null ? d.Urun.UrunAdi : "Ürün",
                             adet = d.Adet,
                             fiyat = d.BirimFiyat,
-                            detayNot = d.DetayNot
+                            detayNot = d.DetayNot,
+                              satirToplami = d.Adet * d.BirimFiyat
                         }).ToList()
 
                     })
