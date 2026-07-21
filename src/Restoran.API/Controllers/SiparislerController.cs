@@ -81,7 +81,6 @@ public class SiparislerController : ControllerBase
         if (dto.Detaylar == null || !dto.Detaylar.Any())
             return BadRequest("Sipariş oluşturmak için en az bir ürün eklemelisiniz.");
 
-        // SALON siparişiyse masayı "DOLU" yap
         if (dto.MasaId.HasValue)
         {
             var masa = await _context.Masas.FindAsync(dto.MasaId.Value);
@@ -131,7 +130,7 @@ public class SiparislerController : ControllerBase
         });
     }
 
-    // PUT /api/siparisler/{id}/tamamla - ✅ SİPARİŞ TAMAMLAMA + OTOMATİK STOK DÜŞÜMÜ
+    // PUT /api/siparisler/{id}/tamamla - SİPARİŞ TAMAMLAMA + OTOMATİK STOK DÜŞÜMÜ
     [HttpPut("{id}/tamamla")]
     public async Task<IActionResult> SiparisTamamla(int id)
     {
@@ -154,7 +153,6 @@ public class SiparislerController : ControllerBase
         if (siparis.SiparisDurumu == "ODENDI")
             return BadRequest("Ödemesi alınmış sipariş tamamlanamaz.");
 
-        // ✅ PersonelId kontrolü
         int personelId = siparis.PersonelId ?? 1;
 
         var stokHataMesajlari = new List<string>();
@@ -246,7 +244,7 @@ public class SiparislerController : ControllerBase
         });
     }
 
-    // PUT /api/siparisler/5/durum -> Sipariş durumunu günceller
+    // ✅ DÜZELTİLDİ: PUT /api/siparisler/{id}/durum -> Sipariş durumunu günceller
     [HttpPut("{id}/durum")]
     public async Task<IActionResult> DurumGuncelle(int id, [FromBody] SiparisDurumGuncelleDto dto)
     {
@@ -255,16 +253,35 @@ public class SiparislerController : ControllerBase
         var siparis = await _context.Siparislers.FindAsync(id);
         if (siparis == null) return NotFound("Durumu güncellenecek sipariş bulunamadı.");
 
-        var gecerliDurumlar = new[] { "BEKLEMEDE", "HAZIRLANIYOR", "HAZIR", "TESLIM EDILDI" };
+        // ✅ Tüm durumlar eklendi (IADE dahil)
+        var gecerliDurumlar = new[] {
+            "BEKLEMEDE",
+            "HAZIRLANIYOR",
+            "HAZIR",
+            "TESLIM EDILDI",
+            "TAMAMLANDI",
+            "IPTAL",
+            "IADE",
+            "ODENDI"
+        };
+
         var yeniDurum = dto.SiparisDurumu?.ToUpper()?.Trim()
             .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C');
+
         if (string.IsNullOrEmpty(yeniDurum) || !gecerliDurumlar.Contains(yeniDurum))
-            return BadRequest(new { Mesaj = "Geçersiz sipariş durumu. Geçerli değerler: " + string.Join(", ", gecerliDurumlar) });
+            return BadRequest(new
+            {
+                Mesaj = "Geçersiz sipariş durumu. Geçerli değerler: " + string.Join(", ", gecerliDurumlar)
+            });
 
         siparis.SiparisDurumu = yeniDurum;
 
         await _context.SaveChangesAsync();
-        return Ok(new { Mesaj = $"Sipariş durumu '{yeniDurum}' olarak güncellendi.", SiparisId = id });
+        return Ok(new
+        {
+            Mesaj = $"Sipariş durumu '{yeniDurum}' olarak güncellendi.",
+            SiparisId = id
+        });
     }
 
     // PUT /api/siparisler/5/iptal -> Siparişi iptal et
