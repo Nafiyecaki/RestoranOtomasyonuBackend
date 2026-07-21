@@ -23,37 +23,85 @@ public class MasaController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var masalar = await _context.Masas
+       
+            var masalar = await _context.Masas
             .Select(m => new
             {
                 m.MasaId,
                 m.MasaNo,
                 m.MasaDurumu,
-                m.Kapasite
+                m.Kapasite,
+
+                aktifSiparis = _context.Siparislers
+                    .Where(s =>
+                        s.MasaId == m.MasaId &&
+                        s.SiparisDurumu != "IPTAL" &&
+                        s.SiparisDurumu != "ODENDI")
+                    .Select(s => new
+                    {
+                        siparisId = s.SiparisId,
+                        toplam = s.ToplamTutar,
+                        siparisDurumu = s.SiparisDurumu,
+                        siparisTarihi = s.SiparisTarihi,
+
+                        siparisUrunleri = s.SiparisDetays.Select(d => new
+                        {
+                            urunId = d.UrunId,
+                            urunAdi = d.Urun.UrunAdi,
+                            adet = d.Adet,
+                            fiyat = d.BirimFiyat,
+                            detayNot = d.DetayNot
+                        }).ToList()
+
+                    })
+                    .FirstOrDefault()
             })
             .ToListAsync();
 
         return Ok(masalar);
     }
-
-    // GET /api/masa/5
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
         var masa = await _context.Masas
+            .Where(m => m.MasaId == id)
             .Select(m => new
             {
                 m.MasaId,
                 m.MasaNo,
                 m.MasaDurumu,
-                m.Kapasite
-            })
-            .FirstOrDefaultAsync(m => m.MasaId == id);
+                m.Kapasite,
 
-        if (masa == null) return NotFound(new { Mesaj = "Masa bulunamadı." });
+                aktifSiparis = _context.Siparislers
+                    .Where(s =>
+                        s.MasaId == m.MasaId &&
+                        s.SiparisDurumu != "IPTAL" &&
+                        s.SiparisDurumu != "ODENDI")
+                    .Select(s => new
+                    {
+                        siparisId = s.SiparisId,
+                        toplam = s.ToplamTutar,
+                        siparisDurumu = s.SiparisDurumu,
+                        siparisTarihi = s.SiparisTarihi,
+
+                        siparisUrunleri = s.SiparisDetays.Select(d => new
+                        {
+                            urunId = d.UrunId,
+                            urunAdi = d.Urun.UrunAdi,
+                            adet = d.Adet,
+                            fiyat = d.BirimFiyat,
+                            detayNot = d.DetayNot
+                        }).ToList()
+                    })
+                    .FirstOrDefault()
+            })
+            .FirstOrDefaultAsync();
+
+        if (masa == null)
+            return NotFound();
+
         return Ok(masa);
     }
-
     // POST /api/masa
     [HttpPost]
     public async Task<IActionResult> MasaEkle([FromBody] MasaEkleDto dto)
