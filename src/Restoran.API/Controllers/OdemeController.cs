@@ -101,17 +101,23 @@ public class OdemeController : ControllerBase
         // 8. Siparişin durumunu "ODENDI" yap
         siparis.SiparisDurumu = "ODENDI";
 
-        // 9. Masanın başka aktif siparişi yoksa masayı boşalt
+        // 9. Masayı kesin olarak BOŞ yap ve varsa eski açık siparişleri de kapat
         if (siparis.MasaId.HasValue)
         {
-            var baskaAktifVarMi = await _context.Siparislers.AnyAsync(s =>
-                s.MasaId == siparis.MasaId &&
-                s.SiparisId != dto.SiparisId &&
-                s.SiparisDurumu != "IPTAL" && s.SiparisDurumu != "TAMAMLANDI" && s.SiparisDurumu != "ODENDI");
-            if (!baskaAktifVarMi)
+            var masa = await _context.Masas.FindAsync(siparis.MasaId.Value);
+            if (masa != null)
             {
-                var masa = await _context.Masas.FindAsync(siparis.MasaId.Value);
-                if (masa != null) masa.MasaDurumu = "BOŞ";
+                masa.MasaDurumu = "BOŞ";
+            }
+
+            // Masada kalmış diğer sahte/boş siparişleri de IPTAL'e çek
+            var digerAciklar = await _context.Siparislers
+                .Where(s => s.MasaId == siparis.MasaId.Value && s.SiparisId != dto.SiparisId && s.SiparisDurumu != "ODENDI")
+                .ToListAsync();
+
+            foreach (var item in digerAciklar)
+            {
+                item.SiparisDurumu = "IPTAL";
             }
         }
 

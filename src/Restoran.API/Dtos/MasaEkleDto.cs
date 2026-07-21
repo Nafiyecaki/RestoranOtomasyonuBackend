@@ -10,4 +10,6 @@ public class MasaEkleDto
 
     [Required(ErrorMessage = "Masa durumu belirtilmelidir (Örn: Boş, Dolu, Rezerve).")]
     public string MasaDurumu { get; set; } = null!;
+
+    public int Kapasite { get; set; } = 4; // Varsayılan 4 kişilik
 }
