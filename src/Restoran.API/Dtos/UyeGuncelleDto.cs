@@ -23,4 +23,8 @@ public class UyeGuncelleDto
 
     // Şifre boş gelirse eski şifre veritabanında korunur, dolu gelirse ezilir
     public string? UyeSifre { get; set; }
+
+    public string AdresTipi { get; set; }
+    public string AcikAdres { get; set; }
+    public bool? TeslimatBolgesindeMi { get; set; }
 }
