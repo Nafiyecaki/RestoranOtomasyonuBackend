@@ -139,11 +139,13 @@ namespace Restoran.API.Controllers
         }
 
         // 6. Güvenli teslimat onaylama
-        [HttpPut("teslim-et")]
-        public async Task<IActionResult> TeslimEt([FromBody] KuryeAtaDto dto)
+        // 6. Güvenli teslimat onaylama (URL'den siparisId alır)
+        [HttpPut("teslim-et/{siparisId}")]
+        public async Task<IActionResult> TeslimEt(int siparisId, [FromBody] KuryeAtaDto dto)
         {
-            var siparis = await _context.Siparislers.FindAsync(dto.SiparisId);
-            if (siparis == null) return NotFound("Sipariş bulunamadı.");
+            var siparis = await _context.Siparislers.FindAsync(siparisId);
+            if (siparis == null)
+                return NotFound("Sipariş bulunamadı.");
 
             if (siparis.PersonelId != dto.PersonelId)
             {
