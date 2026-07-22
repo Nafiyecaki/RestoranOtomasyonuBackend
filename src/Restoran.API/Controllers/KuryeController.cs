@@ -6,6 +6,8 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using Microsoft.AspNetCore.SignalR; // 👈 SignalR kütüphanesi
+using Restoran.API.Hubs;             // 👈 Hub namespace
 
 namespace Restoran.API.Controllers
 {
@@ -14,10 +16,12 @@ namespace Restoran.API.Controllers
     public class KuryeController : ControllerBase
     {
         private readonly DbRestoranContext _context;
+        private readonly IHubContext<SiparisHub> _hubContext; // 👈 SignalR Hub enjekte edildi
 
-        public KuryeController(DbRestoranContext context)
+        public KuryeController(DbRestoranContext context, IHubContext<SiparisHub> hubContext)
         {
             _context = context;
+            _hubContext = hubContext;
         }
 
         // ============================================================
@@ -46,8 +50,6 @@ namespace Restoran.API.Controllers
         [HttpGet("{personelId}/aktif-siparisler")]
         public async Task<IActionResult> GetAktifSiparisler(int personelId)
         {
-            Console.WriteLine($"📦 Kurye #{personelId} için aktif siparişler aranıyor...");
-
             var siparisler = await _context.Siparislers
                 .Where(s => s.PersonelId == personelId &&
                            (s.SiparisDurumu == "KURYEDE" || s.SiparisDurumu == "YOLDA"))
@@ -65,8 +67,6 @@ namespace Restoran.API.Controllers
                         : "Adres Bilgisi Yok"
                 })
                 .ToListAsync();
-
-            Console.WriteLine($"📦 Kurye #{personelId} için {siparisler.Count} aktif sipariş bulundu.");
 
             return Ok(siparisler);
         }
@@ -136,7 +136,7 @@ namespace Restoran.API.Controllers
         }
 
         // ============================================================
-        // 5. Siparişi kuryenin üzerine alması (Havuzdan kabul)
+        // 5. Siparişi kuryenin üzerine alması (Havuzdan kabul) + CANLI BİLDİRİM
         // ============================================================
         [HttpPost("siparis-kabul-et")]
         public async Task<IActionResult> SiparisKabulEt([FromBody] KuryeAtaDto dto)
@@ -163,6 +163,18 @@ namespace Restoran.API.Controllers
             siparis.SiparisDurumu = "KURYEDE";
             await _context.SaveChangesAsync();
 
+            // 📣 SignalR Bildirimi: Müşteriye Kuryenin Siparişi Aldığı Sinyali Gidiyor
+            if (siparis.UyeId.HasValue)
+            {
+                await _hubContext.Clients.Group($"Musteri_{siparis.UyeId.Value}")
+                    .SendAsync("SiparisDurumGuncellendi", new
+                    {
+                        siparisId = siparis.SiparisId,
+                        yeniDurum = "KURYEDE",
+                        mesaj = $"🚀 Siparişiniz #{siparis.SiparisId} kuryeye teslim edildi, adrese doğru yola çıktı!"
+                    });
+            }
+
             return Ok(new
             {
                 message = "Sipariş üzerinize alındı ve durum güncellendi.",
@@ -172,7 +184,7 @@ namespace Restoran.API.Controllers
         }
 
         // ============================================================
-        // 6. Güvenli teslimat onaylama
+        // 6. Güvenli teslimat onaylama + CANLI BİLDİRİM
         // ============================================================
         [HttpPut("teslim-et/{siparisId}")]
         public async Task<IActionResult> TeslimEt(int siparisId, [FromBody] KuryeAtaDto dto)
@@ -193,6 +205,18 @@ namespace Restoran.API.Controllers
             siparis.SiparisTarihi = DateTime.Now;
             await _context.SaveChangesAsync();
 
+            // 📣 SignalR Bildirimi: Müşteriye Teslimat Bilgisi Gidiyor
+            if (siparis.UyeId.HasValue)
+            {
+                await _hubContext.Clients.Group($"Musteri_{siparis.UyeId.Value}")
+                    .SendAsync("SiparisDurumGuncellendi", new
+                    {
+                        siparisId = siparis.SiparisId,
+                        yeniDurum = "TESLIM EDILDI",
+                        mesaj = $"✅ Siparişiniz #{siparis.SiparisId} teslim edildi. Afiyet olsun!"
+                    });
+            }
+
             return Ok(new
             {
                 message = "Sipariş başarıyla teslim edildi.",
@@ -202,7 +226,7 @@ namespace Restoran.API.Controllers
         }
 
         // ============================================================
-        // 🆕 7. Müsait kuryeleri getir
+        // 7. Müsait kuryeleri getir
         // ============================================================
         [HttpGet("musait-kuryeler")]
         public async Task<IActionResult> GetMusaitKuryeler()
@@ -241,15 +265,13 @@ namespace Restoran.API.Controllers
         }
 
         // ============================================================
-        // 🆕 8. Siparişi kuryeye ata
+        // 8. Siparişi kuryeye ata + CANLI BİLDİRİM
         // ============================================================
         [HttpPost("siparis-ata/{siparisId}")]
         public async Task<IActionResult> SiparisKuryeyeAta(int siparisId, [FromBody] KuryeAtaDto dto)
         {
             try
             {
-                Console.WriteLine($"📡 Sipariş #{siparisId} kurye #{dto.PersonelId}'a atanıyor...");
-
                 if (dto == null || dto.PersonelId <= 0)
                     return BadRequest("Geçersiz kurye ID.");
 
@@ -284,7 +306,17 @@ namespace Restoran.API.Controllers
 
                 await _context.SaveChangesAsync();
 
-                Console.WriteLine($"✅ Sipariş #{siparisId} kurye #{dto.PersonelId}'a atandı. Yeni durum: KURYEDE");
+                // 📣 SignalR Bildirimi: Admin siparişi kuryeye atadığında müşteriye haber ver
+                if (siparis.UyeId.HasValue)
+                {
+                    await _hubContext.Clients.Group($"Musteri_{siparis.UyeId.Value}")
+                        .SendAsync("SiparisDurumGuncellendi", new
+                        {
+                            siparisId = siparisId,
+                            yeniDurum = "KURYEDE",
+                            mesaj = $"🏍️ Siparişiniz kuryemiz {kurye.PersonelAdi} {kurye.PersonelSoyadi}'a atandı, yola çıkıyor!"
+                        });
+                }
 
                 return Ok(new
                 {
@@ -297,13 +329,12 @@ namespace Restoran.API.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Hata: {ex.Message}");
                 return StatusCode(500, $"Sunucu hatası: {ex.Message}");
             }
         }
 
         // ============================================================
-        // 🆕 9. Kurye teslim geçmişi
+        // 9. Kurye teslim geçmişi
         // ============================================================
         [HttpGet("{personelId}/gecmis")]
         public async Task<IActionResult> GetTeslimGecmisi(int personelId)
@@ -326,7 +357,7 @@ namespace Restoran.API.Controllers
         }
 
         // ============================================================
-        // 🆕 10. Siparişi iptal et
+        // 10. Siparişi iptal et
         // ============================================================
         [HttpPut("siparis-iptal/{siparisId}")]
         public async Task<IActionResult> SiparisIptal(int siparisId, [FromBody] KuryeAtaDto dto)
@@ -352,34 +383,5 @@ namespace Restoran.API.Controllers
                 durum = siparis.SiparisDurumu
             });
         }
-    }
-
-    // ============================================================
-    // 📦 DTO'LAR
-    // ============================================================
-
-    public class KuryeDto
-    {
-        public int PersonelId { get; set; }
-        public string AdSoyad { get; set; }
-        public string Telefon { get; set; }
-        public bool IsActive { get; set; }
-    }
-
-    public class KuryeSiparisDto
-    {
-        public int SiparisId { get; set; }
-        public string SiparisDurumu { get; set; }
-        public decimal ToplamTutar { get; set; }
-        public DateTime SiparisTarihi { get; set; }
-        public string MusteriAdSoyad { get; set; }
-        public string MusteriTelefon { get; set; }
-        public string AcikAdres { get; set; }
-    }
-
-    public class KuryeAtaDto
-    {
-        public int SiparisId { get; set; }
-        public int PersonelId { get; set; }
     }
 }
