@@ -1,18 +1,23 @@
-﻿using System;
+﻿// Restoran.API/Dtos/PersonelGuncelleDto.cs
+using System;
 
 namespace Restoran.API.Dtos;
 
 public class PersonelGuncelleDto
 {
-    public string PersonelAdi { get; set; } = null!;
-    public string PersonelSoyadi { get; set; } = null!;
-    public string KullaniciAdi { get; set; } = null!;
-    public string? PersonelTelefon { get; set; }
-    public string? Cinsiyet { get; set; }
+    public string PersonelAdi { get; set; }
+    public string PersonelSoyadi { get; set; }
+    public string KullaniciAdi { get; set; }
+    public string PersonelTelefon { get; set; }
+    public string Cinsiyet { get; set; }
     public DateOnly? IseBaslamaTarihi { get; set; }
     public decimal? Maas { get; set; }
     public int? RolId { get; set; }
-
-    // Şifre alanı boş bırakılırsa eski şifre aynen korunacak
     public string? PersonelSifre { get; set; }
+
+    // 🆕 Vardiya Alanları
+    public string? VardiyaBaslangic { get; set; }
+    public string? VardiyaBitis { get; set; }
+    public string? CalismaGunleri { get; set; }
+    public bool? VardiyaAktifMi { get; set; }
 }

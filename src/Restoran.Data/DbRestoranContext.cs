@@ -49,6 +49,10 @@ public partial class DbRestoranContext : DbContext
     public virtual DbSet<Urunler> Urunlers { get; set; }
 
     public virtual DbSet<Uyeler> Uyelers { get; set; }
+
+    // 🆕 BİLDİRİM TABLOSU EKLENDİ
+    public virtual DbSet<Bildirim> Bildirims { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Adres>(entity =>
@@ -197,6 +201,12 @@ public partial class DbRestoranContext : DbContext
             entity.Property(e => e.PersonelTelefon).HasMaxLength(15);
             entity.Property(e => e.RolId).HasColumnName("RolID");
             entity.Property(e => e.IsActive).HasDefaultValue(true);
+
+            // 🆕 VARDİYA ALANLARI EKLENDİ
+            entity.Property(e => e.VardiyaBaslangic).HasMaxLength(10).HasDefaultValue("09:00");
+            entity.Property(e => e.VardiyaBitis).HasMaxLength(10).HasDefaultValue("18:00");
+            entity.Property(e => e.CalismaGunleri).HasMaxLength(20).HasDefaultValue("1,2,3,4,5");
+            entity.Property(e => e.VardiyaAktifMi).HasDefaultValue(true);
 
             entity.HasOne(d => d.Rol).WithMany(p => p.Personels)
                 .HasForeignKey(d => d.RolId)
@@ -395,6 +405,30 @@ public partial class DbRestoranContext : DbContext
             entity.Property(e => e.UyeSifre).HasMaxLength(255);
             entity.Property(e => e.UyeSoyadi).HasMaxLength(50);
             entity.Property(e => e.UyeTelefon).HasMaxLength(15);
+        });
+
+        // 🆕 BİLDİRİM TABLOSU MODEL YAPILANDIRMASI
+        modelBuilder.Entity<Bildirim>(entity =>
+        {
+            entity.HasKey(e => e.BildirimId).HasName("PK__Bildirim__BildirimID");
+
+            entity.ToTable("Bildirim");
+
+            entity.Property(e => e.BildirimId).HasColumnName("BildirimID");
+            entity.Property(e => e.KullaniciId).HasColumnName("KullaniciID");
+            entity.Property(e => e.Baslik).HasMaxLength(200);
+            entity.Property(e => e.Mesaj).HasMaxLength(500);
+            entity.Property(e => e.OlusturmaTarihi)
+                .HasDefaultValueSql("(getdate())")
+                .HasColumnType("datetime");
+            entity.Property(e => e.OkunduMu).HasDefaultValue(false);
+            entity.Property(e => e.Tip).HasMaxLength(50);
+
+            entity.HasOne(d => d.Kullanici)
+                .WithMany()
+                .HasForeignKey(d => d.KullaniciId)
+                .HasConstraintName("FK_Bildirim_Uyeler")
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         OnModelCreatingPartial(modelBuilder);

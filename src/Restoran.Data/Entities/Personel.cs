@@ -30,18 +30,18 @@ public partial class Personel
     public bool? IsActive { get; set; }
     public DateTime? SilinmeTarihi { get; set; }
 
+    // 🆕 VARDİYA ALANLARI
+    public string? VardiyaBaslangic { get; set; } // "09:00" formatında
+    public string? VardiyaBitis { get; set; }     // "18:00" formatında
+    public string? CalismaGunleri { get; set; }   // "1,2,3,4,5" (Pazartesi=1, Pazar=7)
+    public bool? VardiyaAktifMi { get; set; } = true;
 
+    // Navigation Properties
     public virtual ICollection<Iade> Iades { get; set; } = new List<Iade>();
-
     public virtual ICollection<Kasa> Kasas { get; set; } = new List<Kasa>();
-
     public virtual ICollection<Odeme> Odemes { get; set; } = new List<Odeme>();
-   
     public virtual ICollection<PersonelIzin> PersonelIzins { get; set; } = new List<PersonelIzin>();
-
     public virtual Roller? Rol { get; set; }
-
     public virtual ICollection<Siparisler> Siparislers { get; set; } = new List<Siparisler>();
-
     public virtual ICollection<StokHareket> StokHarekets { get; set; } = new List<StokHareket>();
 }
