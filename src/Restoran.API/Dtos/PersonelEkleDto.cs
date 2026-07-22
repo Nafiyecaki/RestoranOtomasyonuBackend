@@ -1,5 +1,4 @@
-﻿// Restoran.API/Dtos/PersonelEkleDto.cs
-using System;
+﻿using System;
 
 namespace Restoran.API.Dtos;
 

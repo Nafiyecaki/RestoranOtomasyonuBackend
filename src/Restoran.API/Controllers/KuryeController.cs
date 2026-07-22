@@ -8,6 +8,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using Microsoft.AspNetCore.SignalR; 
+using Restoran.API.Hubs;
 
 namespace Restoran.API.Controllers
 {
@@ -385,38 +387,4 @@ namespace Restoran.API.Controllers
         }
     }
 
-    // ============================================================
-    // 📦 DTO'LAR
-    // ============================================================
-
-    public class KuryeDto
-    {
-        public int PersonelId { get; set; }
-        public string AdSoyad { get; set; }
-        public string Telefon { get; set; }
-        public bool IsActive { get; set; }
-    }
-
-    public class KuryeSiparisDto
-    {
-        public int SiparisId { get; set; }
-        public string SiparisDurumu { get; set; }
-        public decimal ToplamTutar { get; set; }
-        public DateTime SiparisTarihi { get; set; }
-        public string MusteriAdSoyad { get; set; }
-        public string MusteriTelefon { get; set; }
-        public string AcikAdres { get; set; }
-    }
-
-    public class KuryeAtaDto
-    {
-        public int SiparisId { get; set; }
-        public int PersonelId { get; set; }
-    }
-
-    public class KapidaOdemeDto
-    {
-        public int KuryeId { get; set; }
-        public string OdemeTipi { get; set; } = "NAKIT";
-    }
 }

@@ -24,3 +24,11 @@ public class KuryeAtaDto
     public int SiparisId { get; set; }
     public int PersonelId { get; set; }
 }
+
+
+public class KapidaOdemeDto
+{
+    public int KuryeId { get; set; }
+    public string OdemeTipi { get; set; } = "NAKIT";
+
+}
