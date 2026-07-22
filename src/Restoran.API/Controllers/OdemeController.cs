@@ -52,82 +52,79 @@ public class OdemeController : ControllerBase
 
         return Ok(odeme);
     }
-
-    // POST /api/odeme VE POST /api/odeme/odeme-al -> Ödeme Alır, Masayı Boşaltır ve Eski Siparişleri Temizler
     [HttpPost]
     [HttpPost("odeme-al")]
     public async Task<IActionResult> OdemeAl([FromBody] OdemeEkleDto dto)
     {
-        // 1. Model doğrulama
         if (dto == null)
             return BadRequest(new { Mesaj = "Ödeme verileri boş olamaz." });
-
-        if (!ModelState.IsValid)
-            return BadRequest(ModelState);
 
         if (string.IsNullOrWhiteSpace(dto.OdemeTipi))
             return BadRequest(new { Mesaj = "Ödeme tipi boş olamaz." });
 
-        // 2. Sipariş kontrolü
+        // 🆕 Ödeme tipi sabit listeyle sınırlandı
+        var gecerliOdemeTipleri = new[] { "NAKIT", "KREDI KARTI", "ONLINE", "KAPIDA NAKIT" };
+        var odemeTipi = dto.OdemeTipi.Trim().ToUpper(new System.Globalization.CultureInfo("tr-TR"));
+        if (!gecerliOdemeTipleri.Contains(odemeTipi))
+            return BadRequest(new { Mesaj = "Geçersiz ödeme tipi. Geçerli değerler: " + string.Join(", ", gecerliOdemeTipleri) });
+
         var siparis = await _context.Siparislers.FindAsync(dto.SiparisId);
         if (siparis == null)
             return NotFound(new { Mesaj = "Sipariş bulunamadı." });
 
-        // 3. Sipariş tutarı geçerli mi?
+        // 🆕 Sipariş durumu kontrolü — iptal/ödenmiş siparişe tekrar ödeme alınamasın
+        if (siparis.SiparisDurumu == "IPTAL")
+            return BadRequest(new { Mesaj = "İptal edilmiş bir siparişe ödeme alınamaz." });
+
+        if (siparis.SiparisDurumu == "ODENDI")
+            return BadRequest(new { Mesaj = "Bu siparişin ödemesi zaten alınmış." });
+
         if (!siparis.ToplamTutar.HasValue || siparis.ToplamTutar.Value <= 0)
             return BadRequest(new { Mesaj = "Siparişin geçerli bir tutarı yok." });
 
-        // 4. Personel geçerli mi? (Atlanan durumlarda varsayılan personel atanır)
-        int personelId = dto.PersonelId ?? 1;
+        int personelId = dto.PersonelId.HasValue && dto.PersonelId.Value > 0 ? dto.PersonelId.Value : 1;
+        int kasaId = dto.KasaId.HasValue && dto.KasaId.Value > 0 ? dto.KasaId.Value : 1;
+
+        // 🆕 Kasa açık mı kontrolü
+        var kasa = await _context.Kasas.FindAsync(kasaId);
+        if (kasa == null)
+            return BadRequest(new { Mesaj = "Geçersiz kasa ID." });
+        if (kasa.KasaDurumu == "Kapalı")
+            return BadRequest(new { Mesaj = "Seçilen kasa kapalı, ödeme alınamaz. Önce kasayı açın." });
+
         var personelVar = await _context.Personels.AnyAsync(p => p.PersonelId == personelId);
         if (!personelVar)
             return BadRequest(new { Mesaj = "Geçersiz personel ID." });
 
-        // 5. Kasa geçerli mi?
-        int kasaId = dto.KasaId ?? 1;
-        var kasaVar = await _context.Kasas.AnyAsync(k => k.KasaId == kasaId);
-        if (!kasaVar)
-            return BadRequest(new { Mesaj = "Geçersiz kasa ID." });
-
-        // 6. Aynı siparişe daha önce ödeme alınmış mı?
         var odenmis = await _context.Odemes.AnyAsync(o => o.SiparisId == dto.SiparisId);
         if (odenmis)
             return BadRequest(new { Mesaj = "Bu siparişin ödemesi zaten alınmış." });
 
-        // 7. Yeni ödeme kaydı oluştur (Tutar siparişten çekilir)
         var odeme = new Odeme
         {
             SiparisId = dto.SiparisId,
-            OdemeTipi = dto.OdemeTipi.Trim().ToUpper(),
+            OdemeTipi = odemeTipi,
             OdemeTutari = siparis.ToplamTutar.Value,
             OdemeTarihi = DateTime.Now,
             PersonelId = personelId,
             KasaId = kasaId
         };
 
-        // 8. Siparişin durumunu "ODENDI" yap
         siparis.SiparisDurumu = "ODENDI";
 
-        // 9. Masayı BOŞ yap ve masadaki kapatılmamış diğer siparişleri IPTAL durumuna çek
         if (siparis.MasaId.HasValue)
         {
             var masa = await _context.Masas.FindAsync(siparis.MasaId.Value);
-            if (masa != null)
-            {
-                masa.MasaDurumu = "BOŞ";
-            }
+            if (masa != null) masa.MasaDurumu = "BOŞ";
 
-            // Masada kalmış diğer eski/açık siparişleri IPTAL'e çek
-            var digerAciklar = await _context.Siparislers
+            var eskiAcikSiparisler = await _context.Siparislers
                 .Where(s => s.MasaId == siparis.MasaId.Value &&
                             s.SiparisId != dto.SiparisId &&
                             s.SiparisDurumu != "ODENDI")
                 .ToListAsync();
 
-            foreach (var item in digerAciklar)
-            {
+            foreach (var item in eskiAcikSiparisler)
                 item.SiparisDurumu = "IPTAL";
-            }
         }
 
         _context.Odemes.Add(odeme);
@@ -142,7 +139,7 @@ public class OdemeController : ControllerBase
         });
     }
 
-    // PUT /api/odeme/{id} -> Ödeme bilgilerini güncelle
+    // PUT /api/odeme/{id} -> Ödeme güncelle
     [HttpPut("{id}")]
     public async Task<IActionResult> Guncelle(int id, [FromBody] OdemeGuncelleDto dto)
     {
@@ -154,28 +151,22 @@ public class OdemeController : ControllerBase
         var odeme = await _context.Odemes.FindAsync(id);
         if (odeme == null) return NotFound(new { Mesaj = "Ödeme bulunamadı." });
 
-        var personelVar = await _context.Personels.AnyAsync(p => p.PersonelId == dto.PersonelId);
-        if (!personelVar) return BadRequest(new { Mesaj = "Geçersiz personel ID." });
-
-        var kasaVar = await _context.Kasas.AnyAsync(k => k.KasaId == dto.KasaId);
-        if (!kasaVar) return BadRequest(new { Mesaj = "Geçersiz kasa ID." });
-
         odeme.OdemeTipi = dto.OdemeTipi.Trim();
-        odeme.PersonelId = dto.PersonelId;
-        odeme.KasaId = dto.KasaId;
+        if (dto.PersonelId.HasValue) odeme.PersonelId = dto.PersonelId.Value;
+        if (dto.KasaId.HasValue) odeme.KasaId = dto.KasaId.Value;
 
         await _context.SaveChangesAsync();
 
         return Ok(new
         {
-            Mesaj = "Ödeme güncellendi.",
+            Mesaj = "Ödeme başarıyla güncellendi.",
             odeme.OdemeId,
             odeme.OdemeTipi,
             odeme.OdemeTutari
         });
     }
 
-    // DELETE /api/odeme/{id} -> Ödemeyi iptal et, siparişi tekrar BEKLEMEDE yap
+    // DELETE /api/odeme/{id} -> Ödemeyi iptal et
     [HttpDelete("{id}")]
     public async Task<IActionResult> Sil(int id)
     {

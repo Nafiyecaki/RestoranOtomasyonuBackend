@@ -61,17 +61,42 @@ public class IadeController : ControllerBase
         return Ok(iade);
     }
 
-    // POST /api/Iade
     [HttpPost]
     public async Task<IActionResult> IadeAl([FromBody] IadeEkleDto dto)
     {
-        if (dto == null) return BadRequest();
+        if (dto == null || string.IsNullOrWhiteSpace(dto.IadeSebebi))
+            return BadRequest(new { Mesaj = "İade sebebi boş olamaz." });
+
+        if (dto.IadeTutari <= 0)
+            return BadRequest(new { Mesaj = "İade tutarı geçerli olmalı." });
+
+        // 🆕 SiparisDetayId verilmişse gerçekten var mı kontrol et
+        SiparisDetay? detay = null;
+        if (dto.SiparisDetayId.HasValue)
+        {
+            detay = await _context.SiparisDetays.FindAsync(dto.SiparisDetayId.Value);
+            if (detay == null)
+                return NotFound(new { Mesaj = "İlgili sipariş kalemi bulunamadı." });
+
+            // 🆕 Aynı kalem daha önce iade edilmiş mi?
+            var dahaOnceIadeEdilmis = await _context.Iades
+                .AnyAsync(i => i.SiparisDetayId == dto.SiparisDetayId && i.IadeDurumu != "REDDEDILDI");
+            if (dahaOnceIadeEdilmis)
+                return BadRequest(new { Mesaj = "Bu ürün için zaten bir iade kaydı var." });
+        }
+
+        // 🆕 Durum sabit listeyle doğrulanıyor (DurumGuncelle ile tutarlı)
+        var gecerliDurumlar = new[] { "BEKLEMEDE", "ONAYLANDI", "REDDEDILDI" };
+        var durum = (dto.IadeDurumu ?? "BEKLEMEDE").ToUpper().Trim()
+            .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C');
+        if (!gecerliDurumlar.Contains(durum))
+            return BadRequest(new { Mesaj = "Geçersiz iade durumu." });
 
         var iade = new Iade
         {
-            IadeTarihi = DateTime.Now, // İade zamanı otomatik sistem saati atanıyor
+            IadeTarihi = DateTime.Now,
             IadeSebebi = dto.IadeSebebi,
-            IadeDurumu = dto.IadeDurumu,
+            IadeDurumu = durum,
             IadeTutari = dto.IadeTutari,
             SiparisDetayId = dto.SiparisDetayId,
             UrunId = dto.UrunId,
@@ -89,21 +114,35 @@ public class IadeController : ControllerBase
             iade.IadeTarihi
         });
     }
-
     [HttpPut("{id}/durum")]
     public async Task<IActionResult> DurumGuncelle(int id, [FromBody] IadeDurumGuncelleDto dto)
     {
         if (dto == null) return BadRequest();
 
         var iade = await _context.Iades.FindAsync(id);
-        if (iade == null) return NotFound("İade kaydı bulunamadı.");
+        if (iade == null) return NotFound(new { Mesaj = "İade kaydı bulunamadı." });
 
-        // Sadece tanımlı durumlar kabul edilir
         var gecerliDurumlar = new[] { "BEKLEMEDE", "ONAYLANDI", "REDDEDILDI" };
         var yeniDurum = dto.IadeDurumu?.ToUpper()?.Trim()
             .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C');
         if (string.IsNullOrEmpty(yeniDurum) || !gecerliDurumlar.Contains(yeniDurum))
             return BadRequest(new { Mesaj = "Geçersiz iade durumu. Geçerli değerler: " + string.Join(", ", gecerliDurumlar) });
+
+        if (iade.IadeDurumu == "ONAYLANDI")
+            return BadRequest(new { Mesaj = "Zaten onaylanmış bir iade tekrar güncellenemez." });
+
+        // 🆕 Onaylanınca ilgili siparişin toplam tutarından düş
+        if (yeniDurum == "ONAYLANDI" && iade.SiparisDetayId.HasValue)
+        {
+            var detay = await _context.SiparisDetays
+                .Include(d => d.Siparis)
+                .FirstOrDefaultAsync(d => d.SiparisDetayId == iade.SiparisDetayId.Value);
+
+            if (detay?.Siparis != null && detay.Siparis.ToplamTutar.HasValue)
+            {
+                detay.Siparis.ToplamTutar = Math.Max(0, detay.Siparis.ToplamTutar.Value - iade.IadeTutari);
+            }
+        }
 
         iade.IadeDurumu = yeniDurum;
         await _context.SaveChangesAsync();
