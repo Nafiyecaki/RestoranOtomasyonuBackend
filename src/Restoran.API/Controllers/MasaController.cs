@@ -21,7 +21,7 @@ public class MasaController : ControllerBase
         _context = context;
     }
 
-    // ✅ DÜZELTİLDİ: GET /api/masa
+    // ✅ GET /api/masa - Tüm masaları getir (Hata yönetimi eklendi)
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
@@ -29,40 +29,43 @@ public class MasaController : ControllerBase
         {
             Console.WriteLine("📊 Masa listesi isteği başladı...");
 
-            // ✅ Önce basitçe masaları çekelim
             var masalar = await _context.Masas
-            .Select(m => new
-            {
-                m.MasaId,
-                m.MasaNo,
-                m.MasaDurumu,
-                m.Kapasite,
+                .Select(m => new
+                {
+                    m.MasaId,
+                    m.MasaNo,
+                    m.MasaDurumu,
+                    m.Kapasite,
 
-                aktifSiparis = _context.Siparislers
-                    .Where(s =>
-                        s.MasaId == m.MasaId &&
-                        s.SiparisDurumu != "IPTAL" &&
-                        s.SiparisDurumu != "ODENDI")
-                    .Select(s => new
-                    {
-                        siparisId = s.SiparisId,
-                        toplam = s.ToplamTutar,
-                        siparisDurumu = s.SiparisDurumu,
-                        siparisTarihi = s.SiparisTarihi,
-
-                        siparisUrunleri = s.SiparisDetays.Select(d => new
+                    aktifSiparis = _context.Siparislers
+                        .Where(s =>
+                            s.MasaId == m.MasaId &&
+                            s.SiparisDurumu != "IPTAL" &&
+                            s.SiparisDurumu != "ODENDI" &&
+                            s.SiparisDurumu != "TAMAMLANDI")
+                        .OrderByDescending(s => s.SiparisTarihi)
+                        .Select(s => new
                         {
-                            urunId = d.UrunId,
-                            urunAdi = d.Urun.UrunAdi,
-                            adet = d.Adet,
-                            fiyat = d.BirimFiyat,
-                            detayNot = d.DetayNot
-                        }).ToList()
+                            siparisId = s.SiparisId,
+                            toplam = s.ToplamTutar,
+                            siparisDurumu = s.SiparisDurumu,
+                            siparisTarihi = s.SiparisTarihi,
+                            siparisTipi = s.SiparisTipi,
 
-                    })
-                    .FirstOrDefault()
-            })
-            .ToListAsync();
+                            siparisUrunleri = s.SiparisDetays.Select(d => new
+                            {
+                                urunId = d.UrunId,
+                                urunAdi = d.Urun != null ? d.Urun.UrunAdi : "Ürün",
+                                adet = d.Adet,
+                                fiyat = d.BirimFiyat,
+                                detayNot = d.DetayNot,
+                                satirToplami = d.Adet * d.BirimFiyat
+                            }).ToList()
+
+                        })
+                        .FirstOrDefault()
+                })
+                .ToListAsync();
 
             Console.WriteLine($"📊 {masalar.Count} adet masa getirildi.");
 
@@ -79,7 +82,7 @@ public class MasaController : ControllerBase
         }
     }
 
-    // ✅ DÜZELTİLDİ: GET /api/masa/{id}
+    // ✅ GET /api/masa/{id} - Tek masa getir (Hata yönetimi eklendi)
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
@@ -93,12 +96,40 @@ public class MasaController : ControllerBase
                     m.MasaNo,
                     m.MasaDurumu,
                     m.Kapasite,
+
                     // ✅ Basit aktif sipariş kontrolü
                     aktifSiparisVarMi = _context.Siparislers
                         .Any(s => s.MasaId == m.MasaId &&
                                  s.SiparisDurumu != "IPTAL" &&
                                  s.SiparisDurumu != "ODENDI" &&
-                                 s.SiparisDurumu != "TAMAMLANDI")
+                                 s.SiparisDurumu != "TAMAMLANDI"),
+
+                    aktifSiparis = _context.Siparislers
+                        .Where(s =>
+                            s.MasaId == m.MasaId &&
+                            s.SiparisDurumu != "IPTAL" &&
+                            s.SiparisDurumu != "ODENDI" &&
+                            s.SiparisDurumu != "TAMAMLANDI")
+                        .OrderByDescending(s => s.SiparisTarihi)
+                        .Select(s => new
+                        {
+                            siparisId = s.SiparisId,
+                            toplam = s.ToplamTutar,
+                            siparisDurumu = s.SiparisDurumu,
+                            siparisTarihi = s.SiparisTarihi,
+                            siparisTipi = s.SiparisTipi,
+
+                            siparisUrunleri = s.SiparisDetays.Select(d => new
+                            {
+                                urunId = d.UrunId,
+                                urunAdi = d.Urun != null ? d.Urun.UrunAdi : "Ürün",
+                                adet = d.Adet,
+                                fiyat = d.BirimFiyat,
+                                detayNot = d.DetayNot,
+                                satirToplami = d.Adet * d.BirimFiyat
+                            }).ToList()
+                        })
+                        .FirstOrDefault()
                 })
                 .FirstOrDefaultAsync();
 
@@ -114,7 +145,7 @@ public class MasaController : ControllerBase
         }
     }
 
-    // ✅ DÜZELTİLDİ: POST /api/masa - Masa Ekleme
+    // ✅ POST /api/masa - Masa Ekleme (Kapasite nullable kontrolü eklendi)
     [HttpPost]
     public async Task<IActionResult> MasaEkle([FromBody] MasaEkleDto dto)
     {
@@ -139,7 +170,7 @@ public class MasaController : ControllerBase
         {
             MasaNo = dto.MasaNo,
             MasaDurumu = durum,
-            Kapasite = dto.Kapasite ?? 4
+            Kapasite = dto.Kapasite ?? 4  // ✅ Nullable kontrolü
         };
 
         _context.Masas.Add(masa);
@@ -221,7 +252,7 @@ public class MasaController : ControllerBase
 
         masa.MasaDurumu = durum;
 
-        // Masa "BOŞ" yapılıyorsa masanın arka planda açık kalmış siparişlerini IPTAL yapıyoruz
+        // ✅ Masa "BOŞ" yapılıyorsa masanın arka planda açık kalmış siparişlerini IPTAL yapıyoruz
         if (durum == "BOŞ")
         {
             var acikSiparisler = await _context.Siparislers
@@ -247,7 +278,7 @@ public class MasaController : ControllerBase
         });
     }
 
-    // ✅ POST /api/Masa/tasi - Masa Taşıma
+    // ✅ POST /api/Masa/tasi - Masa Taşıma (Hedef masa kontrolü eklendi)
     [HttpPost("tasi")]
     public async Task<IActionResult> MasaTasi([FromBody] MasaTasiDto dto)
     {
@@ -269,7 +300,7 @@ public class MasaController : ControllerBase
         if (hedefMasa.MasaDurumu == "DOLU")
             return BadRequest(new { Mesaj = "Hedef masa zaten dolu." });
 
-        // ✅ Hedef masa ARIZALI veya KULLANIM DIŞI kontrolü
+        // ✅ Hedef masa ARIZALI veya KULLANIM DIŞI kontrolü (Arkadaşının eklediği)
         if (hedefMasa.MasaDurumu == "ARIZALI" || hedefMasa.MasaDurumu == "KULLANIM DIŞI")
             return BadRequest(new { Mesaj = "Hedef masa kullanılamaz durumda." });
 
@@ -292,7 +323,7 @@ public class MasaController : ControllerBase
         return Ok(new { Mesaj = $"{kaynakMasa.MasaNo} masası başarıyla {hedefMasa.MasaNo} masasına taşındı." });
     }
 
-    // ✅ DELETE /api/masa/{id} - Masa Silme
+    // ✅ DELETE /api/masa/{id} - Masa Silme (Rezerve kontrolü eklendi)
     [HttpDelete("{id}")]
     public async Task<IActionResult> Sil(int id)
     {
@@ -303,6 +334,7 @@ public class MasaController : ControllerBase
         if (masa.MasaDurumu == "DOLU")
             return BadRequest(new { Mesaj = "Dolu bir masa silinemez." });
 
+        // ✅ Rezerve masa kontrolü (Arkadaşının eklediği)
         if (masa.MasaDurumu == "REZERVE")
             return BadRequest(new { Mesaj = "Rezerve bir masa silinemez." });
 
