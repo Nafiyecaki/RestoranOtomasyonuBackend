@@ -231,9 +231,9 @@ public class MasaController : ControllerBase
         });
     }
 
-    // ✅ PUT /api/masa/{id}/durum - Anlık Durum Güncelleme
+    // MasaController.cs içinde DurumGuncelle metodunu değiştirin:
     [HttpPut("{id}/durum")]
-    public async Task<IActionResult> DurumGuncelle(int id, [FromBody] MasaGuncelleDto dto)
+    public async Task<IActionResult> DurumGuncelle(int id, [FromBody] MasaDurumGuncelleDto dto)
     {
         if (dto == null || string.IsNullOrWhiteSpace(dto.MasaDurumu))
             return BadRequest(new { Mesaj = "Masa durumu boş olamaz." });
@@ -246,35 +246,32 @@ public class MasaController : ControllerBase
 
         var gecerliDurumlar = new[] { "BOŞ", "DOLU", "REZERVE", "ARIZALI", "KULLANIM DIŞI" };
         if (!gecerliDurumlar.Contains(durum))
-        {
             return BadRequest(new { Mesaj = "Geçersiz masa durumu." });
-        }
 
-        masa.MasaDurumu = durum;
-
-        // ✅ Masa "BOŞ" yapılıyorsa masanın arka planda açık kalmış siparişlerini IPTAL yapıyoruz
         if (durum == "BOŞ")
         {
-            var acikSiparisler = await _context.Siparislers
-                .Where(s => s.MasaId == id &&
-                           s.SiparisDurumu != "ODENDI" &&
-                           s.SiparisDurumu != "IPTAL" &&
-                           s.SiparisDurumu != "TAMAMLANDI")
-                .ToListAsync();
+            var aktifSiparisVarMi = await _context.Siparislers
+                .AnyAsync(s => s.MasaId == id &&
+                               s.SiparisDurumu != "ODENDI" &&
+                               s.SiparisDurumu != "IPTAL");
 
-            foreach (var siparis in acikSiparisler)
-            {
-                siparis.SiparisDurumu = "IPTAL";
-            }
+            if (aktifSiparisVarMi)
+                return BadRequest(new { Mesaj = "Bu masada ödenmemiş sipariş var! Masayı boşaltmak için önce ödeme almalı veya siparişi iptal etmelisiniz." });
         }
 
+        // DOLU'ya doğrudan geçiş engeli: sipariş/taşıma olmadan garson panelinden 'DOLU' set edilmemeli
+        if (durum == "DOLU" && masa.MasaDurumu != "DOLU")
+            return BadRequest(new { Mesaj = "Masa doğrudan 'Dolu' yapılamaz. Lütfen sipariş ekleyin veya masa taşıyın." });
+
+        masa.MasaDurumu = durum;
         await _context.SaveChangesAsync();
 
         return Ok(new
         {
             Mesaj = $"Masa durumu başarıyla '{durum}' olarak güncellendi.",
             masa.MasaId,
-            masa.MasaDurumu
+            masa.MasaDurumu,
+            RezervasyonSaati = dto.RezervasyonSaati
         });
     }
 

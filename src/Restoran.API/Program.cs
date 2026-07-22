@@ -6,24 +6,29 @@ using Restoran.Data;
 using Scalar.AspNetCore;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi.Models;
+using Restoran.API.Hubs; // 👈 SignalR Hub Namespace'i Eklendi
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-// ✅ CORS - Tüm kaynaklara izin ver (Geliştirme için)
+// 💡 SignalR Servisi Eklendi
+builder.Services.AddSignalR();
+
+// ✅ CORS - SignalR ile Uyumlu Ayarlar (AllowCredentials Şart)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll",
         policy =>
         {
-            policy.AllowAnyOrigin()        // Her yerden gelen isteklere izin ver
-                  .AllowAnyMethod()        // Tüm HTTP metodlarına izin ver (GET, POST, PUT, DELETE, vs.)
-                  .AllowAnyHeader();       // Tüm header'lara izin ver
+            policy.SetIsOriginAllowed(origin => true) // SignalR'ın canlı bağlantı kurabilmesi için
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();                // WebSocket / SignalR için zorunlu
         });
 });
 
-// OpenAPI (Scalar) JWT Kilit Mekanizması Yapılandırması (.NET 9 Standartlarında)
+// OpenAPI (Scalar) JWT Kilit Mekanizması
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
@@ -56,13 +61,13 @@ builder.Services.AddOpenApi(options =>
     });
 });
 
-// Veritabanı Bağlantısı ve Geçici Hata Toleransı (Retry Mekanizması)
+// Veritabanı Bağlantısı ve Geçici Hata Toleransı
 builder.Services.AddDbContext<DbRestoranContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DbRestoran"),
         sqlOptions => sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 5,                          // Bağlantı koptuğunda 5 kez tekrar dener
-            maxRetryDelay: TimeSpan.FromSeconds(10),   // Denemeler arası 10 saniye bekler
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
             errorNumbersToAdd: null
         )
     ));
@@ -95,17 +100,14 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-// ⚠️ HttpsRedirection KALDIRILDI: frontend http://localhost:5000 kullanıyor,
-// bu yönlendirme aktifken CORS preflight (OPTIONS) istekleri başarısız oluyordu.
-// Eğer ileride backend'i HTTPS üzerinden çalıştırmaya karar verirseniz,
-// frontend'deki API_URL'i de https://localhost:XXXX olarak güncelleyip
-// bu satırı geri açabilirsiniz.
-// app.UseHttpsRedirection();
-app.UseCors("AllowAll");  // ← "FrontendPolicy" yerine "AllowAll" kullan
+app.UseCors("AllowAll");
 
-app.UseAuthentication();   // Önce: Sen kimsin? (Kimlik Doğrulama)
-app.UseAuthorization();    // Sonra: Ne yapabilirsin? (Yetkilendirme)
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
+
+// 💡 SignalR Endpoint Haritası
+app.MapHub<SiparisHub>("/hubs/siparis");
 
 app.Run();

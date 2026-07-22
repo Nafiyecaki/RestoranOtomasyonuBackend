@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace Restoran.API.Controllers
 {
@@ -15,10 +16,12 @@ namespace Restoran.API.Controllers
     public class KuryeController : ControllerBase
     {
         private readonly DbRestoranContext _context;
+        private readonly IHubContext<SiparisHub> _hubContext; // 👈 SignalR Hub enjekte edildi
 
-        public KuryeController(DbRestoranContext context)
+        public KuryeController(DbRestoranContext context, IHubContext<SiparisHub> hubContext)
         {
             _context = context;
+            _hubContext = hubContext;
         }
 
         // ============================================================
@@ -47,8 +50,6 @@ namespace Restoran.API.Controllers
         [HttpGet("{personelId}/aktif-siparisler")]
         public async Task<IActionResult> GetAktifSiparisler(int personelId)
         {
-            Console.WriteLine($"📦 Kurye #{personelId} için aktif siparişler aranıyor...");
-
             var siparisler = await _context.Siparislers
                 .Where(s => s.PersonelId == personelId &&
                            (s.SiparisDurumu == "KURYEDE" || s.SiparisDurumu == "YOLDA"))
@@ -66,8 +67,6 @@ namespace Restoran.API.Controllers
                         : "Adres Bilgisi Yok"
                 })
                 .ToListAsync();
-
-            Console.WriteLine($"📦 Kurye #{personelId} için {siparisler.Count} aktif sipariş bulundu.");
 
             return Ok(siparisler);
         }
@@ -137,7 +136,7 @@ namespace Restoran.API.Controllers
         }
 
         // ============================================================
-        // 5. Siparişi kuryenin üzerine alması (Havuzdan kabul)
+        // 5. Siparişi kuryenin üzerine alması (Havuzdan kabul) + CANLI BİLDİRİM
         // ============================================================
         [HttpPost("siparis-kabul-et")]
         public async Task<IActionResult> SiparisKabulEt([FromBody] KuryeAtaDto dto)
@@ -164,6 +163,18 @@ namespace Restoran.API.Controllers
             siparis.SiparisDurumu = "KURYEDE";
             await _context.SaveChangesAsync();
 
+            // 📣 SignalR Bildirimi: Müşteriye Kuryenin Siparişi Aldığı Sinyali Gidiyor
+            if (siparis.UyeId.HasValue)
+            {
+                await _hubContext.Clients.Group($"Musteri_{siparis.UyeId.Value}")
+                    .SendAsync("SiparisDurumGuncellendi", new
+                    {
+                        siparisId = siparis.SiparisId,
+                        yeniDurum = "KURYEDE",
+                        mesaj = $"🚀 Siparişiniz #{siparis.SiparisId} kuryeye teslim edildi, adrese doğru yola çıktı!"
+                    });
+            }
+
             return Ok(new
             {
                 message = "Sipariş üzerinize alındı ve durum güncellendi.",
@@ -173,7 +184,7 @@ namespace Restoran.API.Controllers
         }
 
         // ============================================================
-        // 6. Güvenli teslimat onaylama
+        // 6. Güvenli teslimat onaylama + CANLI BİLDİRİM
         // ============================================================
         [HttpPut("teslim-et/{siparisId}")]
         public async Task<IActionResult> TeslimEt(int siparisId, [FromBody] KuryeAtaDto dto)
@@ -193,6 +204,18 @@ namespace Restoran.API.Controllers
             siparis.SiparisDurumu = "TESLIM EDILDI";
             siparis.SiparisTarihi = DateTime.Now;
             await _context.SaveChangesAsync();
+
+            // 📣 SignalR Bildirimi: Müşteriye Teslimat Bilgisi Gidiyor
+            if (siparis.UyeId.HasValue)
+            {
+                await _hubContext.Clients.Group($"Musteri_{siparis.UyeId.Value}")
+                    .SendAsync("SiparisDurumGuncellendi", new
+                    {
+                        siparisId = siparis.SiparisId,
+                        yeniDurum = "TESLIM EDILDI",
+                        mesaj = $"✅ Siparişiniz #{siparis.SiparisId} teslim edildi. Afiyet olsun!"
+                    });
+            }
 
             return Ok(new
             {
@@ -242,15 +265,13 @@ namespace Restoran.API.Controllers
         }
 
         // ============================================================
-        // 8. Siparişi kuryeye ata
+        // 🆕 8. Siparişi kuryeye ata
         // ============================================================
         [HttpPost("siparis-ata/{siparisId}")]
         public async Task<IActionResult> SiparisKuryeyeAta(int siparisId, [FromBody] KuryeAtaDto dto)
         {
             try
             {
-                Console.WriteLine($"📡 Sipariş #{siparisId} kurye #{dto.PersonelId}'a atanıyor...");
-
                 if (dto == null || dto.PersonelId <= 0)
                     return BadRequest("Geçersiz kurye ID.");
 
@@ -285,7 +306,17 @@ namespace Restoran.API.Controllers
 
                 await _context.SaveChangesAsync();
 
-                Console.WriteLine($"✅ Sipariş #{siparisId} kurye #{dto.PersonelId}'a atandı. Yeni durum: KURYEDE");
+                // 📣 SignalR Bildirimi: Admin siparişi kuryeye atadığında müşteriye haber ver
+                if (siparis.UyeId.HasValue)
+                {
+                    await _hubContext.Clients.Group($"Musteri_{siparis.UyeId.Value}")
+                        .SendAsync("SiparisDurumGuncellendi", new
+                        {
+                            siparisId = siparisId,
+                            yeniDurum = "KURYEDE",
+                            mesaj = $"🏍️ Siparişiniz kuryemiz {kurye.PersonelAdi} {kurye.PersonelSoyadi}'a atandı, yola çıkıyor!"
+                        });
+                }
 
                 return Ok(new
                 {
@@ -298,7 +329,6 @@ namespace Restoran.API.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Hata: {ex.Message}");
                 return StatusCode(500, $"Sunucu hatası: {ex.Message}");
             }
         }
@@ -351,267 +381,6 @@ namespace Restoran.API.Controllers
                 message = "Sipariş başarıyla iptal edildi.",
                 siparisId = siparis.SiparisId,
                 durum = siparis.SiparisDurumu
-            });
-        }
-
-        // ============================================================
-        // 🆕 11. Günlük Toplam Taşınan Tutar
-        // ============================================================
-        [HttpGet("{personelId}/gunluk-tutar")]
-        public async Task<IActionResult> GetGunlukTutar(int personelId, [FromQuery] DateTime? tarih = null)
-        {
-            var hedefTarih = tarih ?? DateTime.Today;
-
-            var toplamTutar = await _context.Siparislers
-                .Where(s => s.PersonelId == personelId &&
-                           s.SiparisDurumu == "TESLIM EDILDI" &&
-                           s.SiparisTarihi.HasValue &&
-                           s.SiparisTarihi.Value.Date == hedefTarih.Date)
-                .SumAsync(s => s.ToplamTutar ?? 0);
-
-            var siparisSayisi = await _context.Siparislers
-                .CountAsync(s => s.PersonelId == personelId &&
-                                s.SiparisDurumu == "TESLIM EDILDI" &&
-                                s.SiparisTarihi.HasValue &&
-                                s.SiparisTarihi.Value.Date == hedefTarih.Date);
-
-            return Ok(new
-            {
-                Tarih = hedefTarih.ToString("yyyy-MM-dd"),
-                ToplamTutar = toplamTutar,
-                SiparisSayisi = siparisSayisi
-            });
-        }
-
-        // ============================================================
-        // 🆕 12. Aylık Toplam Taşınan Tutar (Gün Gün Detaylı)
-        // ============================================================
-        [HttpGet("{personelId}/aylik-tutar")]
-        public async Task<IActionResult> GetAylikTutar(int personelId, [FromQuery] int? yil = null, [FromQuery] int? ay = null)
-        {
-            var hedefYil = yil ?? DateTime.Now.Year;
-            var hedefAy = ay ?? DateTime.Now.Month;
-
-            var toplamTutar = await _context.Siparislers
-                .Where(s => s.PersonelId == personelId &&
-                           s.SiparisDurumu == "TESLIM EDILDI" &&
-                           s.SiparisTarihi.HasValue &&
-                           s.SiparisTarihi.Value.Year == hedefYil &&
-                           s.SiparisTarihi.Value.Month == hedefAy)
-                .SumAsync(s => s.ToplamTutar ?? 0);
-
-            var siparisSayisi = await _context.Siparislers
-                .CountAsync(s => s.PersonelId == personelId &&
-                                s.SiparisDurumu == "TESLIM EDILDI" &&
-                                s.SiparisTarihi.HasValue &&
-                                s.SiparisTarihi.Value.Year == hedefYil &&
-                                s.SiparisTarihi.Value.Month == hedefAy);
-
-            // Gün gün detay
-            var gunlukDetay = await _context.Siparislers
-                .Where(s => s.PersonelId == personelId &&
-                           s.SiparisDurumu == "TESLIM EDILDI" &&
-                           s.SiparisTarihi.HasValue &&
-                           s.SiparisTarihi.Value.Year == hedefYil &&
-                           s.SiparisTarihi.Value.Month == hedefAy)
-                .GroupBy(s => s.SiparisTarihi.Value.Date)
-                .Select(g => new
-                {
-                    Tarih = g.Key.ToString("yyyy-MM-dd"),
-                    GunlukTutar = g.Sum(s => s.ToplamTutar ?? 0),
-                    GunlukSiparis = g.Count()
-                })
-                .OrderBy(g => g.Tarih)
-                .ToListAsync();
-
-            return Ok(new
-            {
-                Yil = hedefYil,
-                Ay = hedefAy,
-                ToplamTutar = toplamTutar,
-                ToplamSiparis = siparisSayisi,
-                GunlukDetay = gunlukDetay
-            });
-        }
-
-        // ============================================================
-        // 🆕 13. Kapıda Ödeme Alındı Bildirimi
-        // ============================================================
-        [HttpPost("{siparisId}/kapida-odeme")]
-        public async Task<IActionResult> KapidaOdemeAlindi(int siparisId, [FromBody] KapidaOdemeDto dto)
-        {
-            var siparis = await _context.Siparislers
-                .Include(s => s.Uye)
-                .FirstOrDefaultAsync(s => s.SiparisId == siparisId);
-
-            if (siparis == null)
-                return NotFound("Sipariş bulunamadı.");
-
-            if (siparis.PersonelId != dto.KuryeId)
-                return BadRequest("Bu sipariş size ait değil.");
-
-            if (siparis.SiparisDurumu != "KURYEDE" && siparis.SiparisDurumu != "YOLDA")
-                return BadRequest($"Sipariş durumu '{siparis.SiparisDurumu}' olduğu için ödeme alınamaz.");
-
-            siparis.SiparisDurumu = "ODENDI";
-            siparis.SiparisTarihi = DateTime.Now;
-
-            // Ödeme kaydı oluştur
-            var odeme = new Odeme
-            {
-                SiparisId = siparisId,
-                OdemeTipi = dto.OdemeTipi ?? "NAKIT",
-                OdemeTutari = siparis.ToplamTutar ?? 0,
-                OdemeTarihi = DateTime.Now,
-                PersonelId = dto.KuryeId
-            };
-
-            _context.Odemes.Add(odeme);
-            await _context.SaveChangesAsync();
-
-            // Bildirim oluştur
-            try
-            {
-                var bildirim = new Bildirim
-                {
-                    KullaniciId = siparis.UyeId,
-                    Baslik = "Kapıda Ödeme Alındı",
-                    Mesaj = $"Sipariş #{siparisId} için kapıda ödeme başarıyla alındı. Tutar: ₺{siparis.ToplamTutar}",
-                    OlusturmaTarihi = DateTime.Now,
-                    OkunduMu = false,
-                    Tip = "ODEME"
-                };
-
-                _context.Bildirims.Add(bildirim);
-                await _context.SaveChangesAsync();
-            }
-            catch
-            {
-                Console.WriteLine("Bildirim tablosu bulunamadı, bildirim gönderilemedi.");
-            }
-
-            return Ok(new
-            {
-                Mesaj = "Kapıda ödeme başarıyla alındı.",
-                SiparisId = siparisId,
-                OdemeTutari = siparis.ToplamTutar
-            });
-        }
-
-        // ============================================================
-        // 🆕 14. Vardiya Kontrolü - Kurye aktif mi?
-        // ============================================================
-        [HttpGet("{personelId}/vardiya-kontrol")]
-        public async Task<IActionResult> VardiyaKontrol(int personelId)
-        {
-            var personel = await _context.Personels.FindAsync(personelId);
-            if (personel == null)
-                return NotFound("Personel bulunamadı.");
-
-            var now = DateTime.Now;
-            var saat = now.ToString("HH:mm");
-            var gun = ((int)now.DayOfWeek == 0) ? 7 : (int)now.DayOfWeek;
-
-            var calismaGunleri = personel.CalismaGunleri?.Split(',').Select(int.Parse).ToList() ?? new List<int>();
-            var vardiyaBaslangic = personel.VardiyaBaslangic ?? "00:00";
-            var vardiyaBitis = personel.VardiyaBitis ?? "23:59";
-
-            var gunKontrol = calismaGunleri.Contains(gun);
-            var saatKontrol = string.Compare(saat, vardiyaBaslangic) >= 0 && string.Compare(saat, vardiyaBitis) <= 0;
-            var vardiyaAktif = personel.VardiyaAktifMi ?? true;
-
-            return Ok(new
-            {
-                PersonelId = personelId,
-                AktifMi = gunKontrol && saatKontrol && vardiyaAktif,
-                GunKontrol = gunKontrol,
-                SaatKontrol = saatKontrol,
-                VardiyaAktif = vardiyaAktif,
-                CalismaGunleri = calismaGunleri,
-                VardiyaBaslangic = vardiyaBaslangic,
-                VardiyaBitis = vardiyaBitis,
-                SuankiSaat = saat,
-                SuankiGun = gun
-            });
-        }
-
-        // ============================================================
-        // 🆕 15. Sipariş Teklifi Al
-        // ============================================================
-        [HttpGet("siparis-teklif/{siparisId}")]
-        public async Task<IActionResult> GetSiparisTeklif(int siparisId)
-        {
-            var siparis = await _context.Siparislers
-                .Include(s => s.Uye)
-                .Include(s => s.SiparisDetays)
-                .ThenInclude(d => d.Urun)
-                .FirstOrDefaultAsync(s => s.SiparisId == siparisId);
-
-            if (siparis == null)
-                return NotFound("Sipariş bulunamadı.");
-
-            if (siparis.SiparisDurumu != "HAZIR")
-                return BadRequest($"Sipariş durumu '{siparis.SiparisDurumu}' olduğu için teklif alınamaz.");
-
-            var urunler = siparis.SiparisDetays.Select(d => new
-            {
-                d.UrunId,
-                UrunAdi = d.Urun != null ? d.Urun.UrunAdi : "Ürün",
-                d.Adet,
-                d.BirimFiyat,
-                Toplam = d.Adet * d.BirimFiyat
-            }).ToList();
-
-            var tahminiMesafe = new Random().Next(1, 15);
-
-            return Ok(new
-            {
-                SiparisId = siparisId,
-                Musteri = siparis.Uye != null ? siparis.Uye.UyeAdi + " " + siparis.Uye.UyeSoyadi : "Misafir",
-                Adres = siparis.Uye != null && siparis.Uye.Adres != null && siparis.Uye.Adres.Any()
-                    ? siparis.Uye.Adres.FirstOrDefault().AcikAdres
-                    : "Adres bilgisi yok",
-                ToplamTutar = siparis.ToplamTutar ?? 0,
-                Urunler = urunler,
-                TahminiMesafe = tahminiMesafe,
-                TahminiTeslimSuresi = tahminiMesafe * 2 + 5,
-                SiparisDurumu = siparis.SiparisDurumu
-            });
-        }
-
-        // ============================================================
-        // 🆕 16. Sipariş Teklifini Kabul Et
-        // ============================================================
-        [HttpPost("siparis-teklif-kabul")]
-        public async Task<IActionResult> SiparisTeklifKabul([FromBody] KuryeAtaDto dto)
-        {
-            var siparis = await _context.Siparislers.FindAsync(dto.SiparisId);
-            if (siparis == null)
-                return NotFound("Sipariş bulunamadı.");
-
-            if (siparis.SiparisDurumu != "HAZIR")
-                return BadRequest($"Sipariş durumu '{siparis.SiparisDurumu}' olduğu için kabul edilemez.");
-
-            if (siparis.PersonelId != null)
-                return BadRequest("Bu sipariş başka bir kurye tarafından zaten alındı.");
-
-            var aktifSiparisSayisi = await _context.Siparislers
-                .CountAsync(s => s.PersonelId == dto.PersonelId &&
-                                (s.SiparisDurumu == "KURYEDE" || s.SiparisDurumu == "YOLDA"));
-
-            if (aktifSiparisSayisi >= 3)
-                return BadRequest($"Kurye zaten {aktifSiparisSayisi} aktif siparişe sahip. (Max 3)");
-
-            siparis.PersonelId = dto.PersonelId;
-            siparis.SiparisDurumu = "KURYEDE";
-            await _context.SaveChangesAsync();
-
-            return Ok(new
-            {
-                Mesaj = "Sipariş teklifi kabul edildi.",
-                SiparisId = dto.SiparisId,
-                KuryeId = dto.PersonelId,
-                Durum = siparis.SiparisDurumu
             });
         }
     }
