@@ -385,6 +385,64 @@ namespace Restoran.API.Controllers
                 durum = siparis.SiparisDurumu
             });
         }
-    }
 
-}
+
+        // ============================================================
+        // 🆕 11. Sipariş durumunu güncelle (Kurye için)
+        // ============================================================
+        [HttpPut("siparis-durum/{siparisId}")]
+        public async Task<IActionResult> UpdateSiparisDurum(int siparisId, [FromBody] SiparisDurumGuncelleDto dto)
+        {
+            try
+            {
+                var siparis = await _context.Siparislers
+                    .Include(s => s.Uye)
+                    .FirstOrDefaultAsync(s => s.SiparisId == siparisId);
+
+                if (siparis == null)
+                    return NotFound("Sipariş bulunamadı.");
+
+                // 🔥 Kurye kontrolü - PersonelId'yi query'den veya body'den al
+                // Önce personelId'yi bul
+                var personelId = await _context.Siparislers
+                    .Where(s => s.SiparisId == siparisId)
+                    .Select(s => s.PersonelId)
+                    .FirstOrDefaultAsync();
+
+                // Geçerli durumlar
+                var gecerliDurumlar = new[] { "KURYEDE", "YOLDA", "TESLIM EDILDI" };
+                if (!gecerliDurumlar.Contains(dto.SiparisDurumu))
+                    return BadRequest($"Geçersiz durum: {dto.SiparisDurumu}. Geçerli durumlar: {string.Join(", ", gecerliDurumlar)}");
+
+                siparis.SiparisDurumu = dto.SiparisDurumu;
+                await _context.SaveChangesAsync();
+
+                Console.WriteLine($"✅ Sipariş #{siparisId} durumu güncellendi: {dto.SiparisDurumu}");
+
+                // 📣 Müşteriye bildirim (YOLDA olduğunda)
+                if (siparis.UyeId.HasValue && dto.SiparisDurumu == "YOLDA")
+                {
+                    await _hubContext.Clients.Group($"Musteri_{siparis.UyeId.Value}")
+                        .SendAsync("SiparisDurumGuncellendi", new
+                        {
+                            siparisId = siparisId,
+                            yeniDurum = "YOLDA",
+                            mesaj = $"🚚 Siparişiniz #{siparisId} kuryede, yolda!"
+                        });
+                }
+
+                return Ok(new
+                {
+                    message = $"Sipariş durumu '{dto.SiparisDurumu}' olarak güncellendi.",
+                    siparisId = siparis.SiparisId,
+                    durum = siparis.SiparisDurumu
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Durum güncelleme hatası: {ex.Message}");
+                return StatusCode(500, $"Sunucu hatası: {ex.Message}");
+            }
+        }
+    }
+    }
