@@ -5,6 +5,7 @@ using Restoran.API.Dtos;
 using Restoran.Data;
 using Restoran.Data.Entities;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -21,14 +22,12 @@ public class MasaController : ControllerBase
         _context = context;
     }
 
-    // ✅ GET /api/masa - Tüm masaları getir (Hata yönetimi eklendi)
+    // ✅ GET /api/masa - Tüm masaları ve aktif sipariş özetlerini getirir
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
         try
         {
-            Console.WriteLine("📊 Masa listesi isteği başladı...");
-
             var masalar = await _context.Masas
                 .Select(m => new
                 {
@@ -37,12 +36,12 @@ public class MasaController : ControllerBase
                     m.MasaDurumu,
                     m.Kapasite,
 
+                    // 🔑 Ödeme alınana (ODENDI) veya iptal edilene (IPTAL) kadar sipariş masa üzerinde kalır
                     aktifSiparis = _context.Siparislers
                         .Where(s =>
                             s.MasaId == m.MasaId &&
                             s.SiparisDurumu != "IPTAL" &&
-                            s.SiparisDurumu != "ODENDI" &&
-                            s.SiparisDurumu != "TAMAMLANDI")
+                            s.SiparisDurumu != "ODENDI")
                         .OrderByDescending(s => s.SiparisTarihi)
                         .Select(s => new
                         {
@@ -61,28 +60,21 @@ public class MasaController : ControllerBase
                                 detayNot = d.DetayNot,
                                 satirToplami = d.Adet * d.BirimFiyat
                             }).ToList()
-
                         })
                         .FirstOrDefault()
                 })
                 .ToListAsync();
 
-            Console.WriteLine($"📊 {masalar.Count} adet masa getirildi.");
-
-            // ✅ Her zaman 200 OK dön
             return Ok(masalar);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Hata: {ex.Message}");
-            Console.WriteLine($"📚 StackTrace: {ex.StackTrace}");
-
-            // ✅ Hata olsa bile boş liste dön
+            Console.WriteLine($"❌ Masa listesi alınırken hata oluştu: {ex.Message}");
             return Ok(new List<object>());
         }
     }
 
-    // ✅ GET /api/masa/{id} - Tek masa getir (Hata yönetimi eklendi)
+    // ✅ GET /api/masa/{id} - Tek bir masayı ve aktif siparişini detaylı getirir
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
@@ -97,19 +89,16 @@ public class MasaController : ControllerBase
                     m.MasaDurumu,
                     m.Kapasite,
 
-                    // ✅ Basit aktif sipariş kontrolü
                     aktifSiparisVarMi = _context.Siparislers
                         .Any(s => s.MasaId == m.MasaId &&
                                  s.SiparisDurumu != "IPTAL" &&
-                                 s.SiparisDurumu != "ODENDI" &&
-                                 s.SiparisDurumu != "TAMAMLANDI"),
+                                 s.SiparisDurumu != "ODENDI"),
 
                     aktifSiparis = _context.Siparislers
                         .Where(s =>
                             s.MasaId == m.MasaId &&
                             s.SiparisDurumu != "IPTAL" &&
-                            s.SiparisDurumu != "ODENDI" &&
-                            s.SiparisDurumu != "TAMAMLANDI")
+                            s.SiparisDurumu != "ODENDI")
                         .OrderByDescending(s => s.SiparisTarihi)
                         .Select(s => new
                         {
@@ -140,12 +129,12 @@ public class MasaController : ControllerBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Hata: {ex.Message}");
+            Console.WriteLine($"❌ Masa bulunurken hata oluştu: {ex.Message}");
             return NotFound(new { Mesaj = "Masa bulunamadı." });
         }
     }
 
-    // ✅ POST /api/masa - Masa Ekleme (Kapasite nullable kontrolü eklendi)
+    // ✅ POST /api/masa - Yeni Masa Ekleme
     [HttpPost]
     public async Task<IActionResult> MasaEkle([FromBody] MasaEkleDto dto)
     {
@@ -160,8 +149,7 @@ public class MasaController : ControllerBase
             return Conflict(new { Mesaj = $"{dto.MasaNo} numaralı masa zaten tanımlı." });
 
         var gecerliDurumlar = new[] { "BOŞ", "DOLU", "REZERVE", "ARIZALI", "KULLANIM DIŞI" };
-        var durum = dto.MasaDurumu?.Trim()
-            .ToUpper(new System.Globalization.CultureInfo("tr-TR"));
+        var durum = dto.MasaDurumu?.Trim().ToUpper(new System.Globalization.CultureInfo("tr-TR"));
 
         if (string.IsNullOrEmpty(durum) || !gecerliDurumlar.Contains(durum))
             return BadRequest(new { Mesaj = "Geçersiz masa durumu." });
@@ -170,7 +158,7 @@ public class MasaController : ControllerBase
         {
             MasaNo = dto.MasaNo,
             MasaDurumu = durum,
-            Kapasite = dto.Kapasite ?? 4  // ✅ Nullable kontrolü
+            Kapasite = dto.Kapasite ?? 4
         };
 
         _context.Masas.Add(masa);
@@ -186,7 +174,7 @@ public class MasaController : ControllerBase
         });
     }
 
-    // ✅ PUT /api/masa/{id} - Genel Güncelleme
+    // ✅ PUT /api/masa/{id} - Masa Bilgilerini Genel Güncelleme
     [HttpPut("{id}")]
     public async Task<IActionResult> Guncelle(int id, [FromBody] MasaGuncelleDto dto)
     {
@@ -209,8 +197,7 @@ public class MasaController : ControllerBase
         }
 
         var gecerliDurumlar = new[] { "BOŞ", "DOLU", "REZERVE", "ARIZALI", "KULLANIM DIŞI" };
-        var durum = dto.MasaDurumu?.Trim()
-            .ToUpper(new System.Globalization.CultureInfo("tr-TR"));
+        var durum = dto.MasaDurumu?.Trim().ToUpper(new System.Globalization.CultureInfo("tr-TR"));
 
         if (string.IsNullOrEmpty(durum) || !gecerliDurumlar.Contains(durum))
             return BadRequest(new { Mesaj = "Geçersiz masa durumu." });
@@ -231,7 +218,8 @@ public class MasaController : ControllerBase
         });
     }
 
-    // MasaController.cs içinde DurumGuncelle metodunu değiştirin:
+    // ✅ PUT /api/masa/{id}/durum - Anlık Masa Durumu Güncelleme (Açık Sipariş Güvenlik Kontrollü)
+    // ✅ PUT /api/masa/{id}/durum - Anlık Masa Durumu Güncelleme
     [HttpPut("{id}/durum")]
     public async Task<IActionResult> DurumGuncelle(int id, [FromBody] MasaDurumGuncelleDto dto)
     {
@@ -248,6 +236,7 @@ public class MasaController : ControllerBase
         if (!gecerliDurumlar.Contains(durum))
             return BadRequest(new { Mesaj = "Geçersiz masa durumu." });
 
+        // 🔒 Güvenlik Kontrolü: Açık siparişi olan masa ödeme alınmadan doğrudan "BOŞ" yapılamaz!
         if (durum == "BOŞ")
         {
             var aktifSiparisVarMi = await _context.Siparislers
@@ -259,10 +248,6 @@ public class MasaController : ControllerBase
                 return BadRequest(new { Mesaj = "Bu masada ödenmemiş sipariş var! Masayı boşaltmak için önce ödeme almalı veya siparişi iptal etmelisiniz." });
         }
 
-        // DOLU'ya doğrudan geçiş engeli: sipariş/taşıma olmadan garson panelinden 'DOLU' set edilmemeli
-        if (durum == "DOLU" && masa.MasaDurumu != "DOLU")
-            return BadRequest(new { Mesaj = "Masa doğrudan 'Dolu' yapılamaz. Lütfen sipariş ekleyin veya masa taşıyın." });
-
         masa.MasaDurumu = durum;
         await _context.SaveChangesAsync();
 
@@ -271,11 +256,10 @@ public class MasaController : ControllerBase
             Mesaj = $"Masa durumu başarıyla '{durum}' olarak güncellendi.",
             masa.MasaId,
             masa.MasaDurumu,
-            RezervasyonSaati = dto.RezervasyonSaati
+            RezervasyonSaati = dto?.RezervasyonSaati
         });
     }
-
-    // ✅ POST /api/Masa/tasi - Masa Taşıma (Hedef masa kontrolü eklendi)
+    // ✅ POST /api/Masa/tasi - Masa Taşıma
     [HttpPost("tasi")]
     public async Task<IActionResult> MasaTasi([FromBody] MasaTasiDto dto)
     {
@@ -297,15 +281,13 @@ public class MasaController : ControllerBase
         if (hedefMasa.MasaDurumu == "DOLU")
             return BadRequest(new { Mesaj = "Hedef masa zaten dolu." });
 
-        // ✅ Hedef masa ARIZALI veya KULLANIM DIŞI kontrolü (Arkadaşının eklediği)
         if (hedefMasa.MasaDurumu == "ARIZALI" || hedefMasa.MasaDurumu == "KULLANIM DIŞI")
             return BadRequest(new { Mesaj = "Hedef masa kullanılamaz durumda." });
 
         var aktifSiparis = await _context.Siparislers
             .FirstOrDefaultAsync(s => s.MasaId == dto.KaynakMasaId &&
                                      s.SiparisDurumu != "ODENDI" &&
-                                     s.SiparisDurumu != "IPTAL" &&
-                                     s.SiparisDurumu != "TAMAMLANDI");
+                                     s.SiparisDurumu != "IPTAL");
 
         if (aktifSiparis != null)
         {
@@ -320,7 +302,7 @@ public class MasaController : ControllerBase
         return Ok(new { Mesaj = $"{kaynakMasa.MasaNo} masası başarıyla {hedefMasa.MasaNo} masasına taşındı." });
     }
 
-    // ✅ DELETE /api/masa/{id} - Masa Silme (Rezerve kontrolü eklendi)
+    // ✅ DELETE /api/masa/{id} - Masa Silme
     [HttpDelete("{id}")]
     public async Task<IActionResult> Sil(int id)
     {
@@ -331,7 +313,6 @@ public class MasaController : ControllerBase
         if (masa.MasaDurumu == "DOLU")
             return BadRequest(new { Mesaj = "Dolu bir masa silinemez." });
 
-        // ✅ Rezerve masa kontrolü (Arkadaşının eklediği)
         if (masa.MasaDurumu == "REZERVE")
             return BadRequest(new { Mesaj = "Rezerve bir masa silinemez." });
 
