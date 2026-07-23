@@ -50,9 +50,7 @@ public partial class DbRestoranContext : DbContext
 
     public virtual DbSet<Uyeler> Uyelers { get; set; }
 
-    // 🆕 BİLDİRİM TABLOSU EKLENDİ
-    public virtual DbSet<Bildirim> Bildirims { get; set; }
-
+    public virtual DbSet<MalzemeTalep> MalzemeTalepleri { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Adres>(entity =>
