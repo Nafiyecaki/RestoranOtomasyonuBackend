@@ -52,7 +52,10 @@ public class OdemeController : ControllerBase
 
         return Ok(odeme);
     }
-    [HttpPost]
+
+    // ============================================================
+    // ✅ MEVCUT: SiparisId ile ödeme al
+    // ============================================================
     [HttpPost("odeme-al")]
     public async Task<IActionResult> OdemeAl([FromBody] OdemeEkleDto dto)
     {
@@ -62,7 +65,6 @@ public class OdemeController : ControllerBase
         if (string.IsNullOrWhiteSpace(dto.OdemeTipi))
             return BadRequest(new { Mesaj = "Ödeme tipi boş olamaz." });
 
-        // 🆕 Ödeme tipi sabit listeyle sınırlandı
         var gecerliOdemeTipleri = new[] { "NAKIT", "KREDI KARTI", "ONLINE", "KAPIDA NAKIT" };
         var odemeTipi = dto.OdemeTipi.Trim().ToUpper(new System.Globalization.CultureInfo("tr-TR"));
         if (!gecerliOdemeTipleri.Contains(odemeTipi))
@@ -72,7 +74,6 @@ public class OdemeController : ControllerBase
         if (siparis == null)
             return NotFound(new { Mesaj = "Sipariş bulunamadı." });
 
-        // 🆕 Sipariş durumu kontrolü — iptal/ödenmiş siparişe tekrar ödeme alınamasın
         if (siparis.SiparisDurumu == "IPTAL")
             return BadRequest(new { Mesaj = "İptal edilmiş bir siparişe ödeme alınamaz." });
 
@@ -84,13 +85,6 @@ public class OdemeController : ControllerBase
 
         int personelId = dto.PersonelId.HasValue && dto.PersonelId.Value > 0 ? dto.PersonelId.Value : 1;
         int kasaId = dto.KasaId.HasValue && dto.KasaId.Value > 0 ? dto.KasaId.Value : 1;
-
-        // 🆕 Kasa açık mı kontrolü
-        var kasa = await _context.Kasas.FindAsync(kasaId);
-        if (kasa == null)
-            return BadRequest(new { Mesaj = "Geçersiz kasa ID." });
-        if (kasa.KasaDurumu == "Kapalı")
-            return BadRequest(new { Mesaj = "Seçilen kasa kapalı, ödeme alınamaz. Önce kasayı açın." });
 
         var personelVar = await _context.Personels.AnyAsync(p => p.PersonelId == personelId);
         if (!personelVar)
@@ -136,6 +130,101 @@ public class OdemeController : ControllerBase
             odeme.OdemeId,
             OdenenTutar = odeme.OdemeTutari,
             SiparisId = dto.SiparisId
+        });
+    }
+
+    // ============================================================
+    // ✅ YENİ: MasaId ile ödeme al (Garson paneli için)
+    // ============================================================
+    [HttpPost("masa-odeme")]
+    public async Task<IActionResult> MasaOdemeAl([FromBody] OdemeEkleDto dto)
+    {
+        if (dto == null)
+            return BadRequest(new { Mesaj = "Ödeme verileri boş olamaz." });
+
+        if (string.IsNullOrWhiteSpace(dto.OdemeTipi))
+            return BadRequest(new { Mesaj = "Ödeme tipi boş olamaz." });
+
+        // Ödeme tipi kontrolü
+        var gecerliOdemeTipleri = new[] { "NAKIT", "KREDI KARTI", "ONLINE", "KAPIDA NAKIT" };
+        var odemeTipi = dto.OdemeTipi.Trim().ToUpper(new System.Globalization.CultureInfo("tr-TR"));
+        if (!gecerliOdemeTipleri.Contains(odemeTipi))
+            return BadRequest(new { Mesaj = "Geçersiz ödeme tipi. Geçerli değerler: " + string.Join(", ", gecerliOdemeTipleri) });
+
+        // ⚠️ ÖNEMLİ: MasaId'yi dto'dan al (SiparisId yerine MasaId kullan)
+        if (!dto.MasaId.HasValue || dto.MasaId.Value <= 0)
+            return BadRequest(new { Mesaj = "Geçersiz masa ID." });
+
+        // Masaya ait açık siparişi bul
+        var siparis = await _context.Siparislers
+            .FirstOrDefaultAsync(s => s.MasaId == dto.MasaId.Value &&
+                                      s.SiparisDurumu != "ODENDI" &&
+                                      s.SiparisDurumu != "IPTAL" &&
+                                      s.SiparisDurumu != "IADE");
+
+        if (siparis == null)
+            return NotFound(new { Mesaj = "Bu masada ödenecek aktif sipariş bulunamadı." });
+
+        if (siparis.ToplamTutar == null || siparis.ToplamTutar <= 0)
+            return BadRequest(new { Mesaj = "Sipariş tutarı geçersiz (0 TL)." });
+
+        int personelId = dto.PersonelId.HasValue && dto.PersonelId.Value > 0 ? dto.PersonelId.Value : 1;
+        int kasaId = dto.KasaId.HasValue && dto.KasaId.Value > 0 ? dto.KasaId.Value : 1;
+
+        // Personel kontrolü
+        var personelVar = await _context.Personels.AnyAsync(p => p.PersonelId == personelId);
+        if (!personelVar)
+            return BadRequest(new { Mesaj = "Geçersiz personel ID." });
+
+        // Tekrar ödeme kontrolü
+        var odenmis = await _context.Odemes.AnyAsync(o => o.SiparisId == siparis.SiparisId);
+        if (odenmis)
+            return BadRequest(new { Mesaj = "Bu siparişin ödemesi zaten alınmış." });
+
+        // Ödeme kaydını oluştur
+        var odeme = new Odeme
+        {
+            SiparisId = siparis.SiparisId,
+            OdemeTipi = odemeTipi,
+            OdemeTutari = siparis.ToplamTutar.Value,
+            OdemeTarihi = DateTime.Now,
+            PersonelId = personelId,
+            KasaId = kasaId
+        };
+
+        // Sipariş durumunu güncelle
+        siparis.SiparisDurumu = "ODENDI";
+
+        // Masayı boşalt
+        var masa = await _context.Masas.FindAsync(dto.MasaId.Value);
+        if (masa != null)
+        {
+            masa.MasaDurumu = "BOŞ";
+        }
+
+        // Aynı masadaki diğer açık siparişleri iptal et
+        var eskiAcikSiparisler = await _context.Siparislers
+            .Where(s => s.MasaId == dto.MasaId.Value &&
+                        s.SiparisId != siparis.SiparisId &&
+                        s.SiparisDurumu != "ODENDI" &&
+                        s.SiparisDurumu != "IPTAL")
+            .ToListAsync();
+
+        foreach (var item in eskiAcikSiparisler)
+        {
+            item.SiparisDurumu = "IPTAL";
+        }
+
+        _context.Odemes.Add(odeme);
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Mesaj = "Ödeme başarıyla alındı. Masa boşa çıkarıldı.",
+            OdemeId = odeme.OdemeId,
+            OdenenTutar = odeme.OdemeTutari,
+            SiparisId = siparis.SiparisId,
+            MasaId = dto.MasaId.Value
         });
     }
 

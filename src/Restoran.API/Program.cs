@@ -108,6 +108,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 // 💡 SignalR Endpoint Haritası
-app.MapHub<SiparisHub>("/Hubs/SiparisHub");
-
+app.MapHub<SiparisHub>("/hubs/siparis");
 app.Run();

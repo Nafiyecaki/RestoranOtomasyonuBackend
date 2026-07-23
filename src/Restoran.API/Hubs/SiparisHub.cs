@@ -1,20 +1,24 @@
 ﻿using Microsoft.AspNetCore.SignalR;
-using System.Threading.Tasks;
 
-namespace Restoran.API.Hubs
+namespace Restoran.API.Hubs;
+
+public class SiparisHub : Hub
 {
-    public class SiparisHub : Hub
+    // Müşteriyi gruba ekle
+    public async Task JoinCustomerGroup(int uyeId)
     {
-        // Müşteri login olduğunda kendi UyeId'sine özel gruba katılır
-        public async Task JoinCustomerGroup(int uyeId)
-        {
-            await Groups.AddToGroupAsync(Context.ConnectionId, $"Musteri_{uyeId}");
-        }
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"customer_{uyeId}");
+    }
 
-        // Müşteri tek bir sipariş detay sayfasındaysa o siparişi dinleyebilir
-        public async Task JoinOrderGroup(int siparisId)
-        {
-            await Groups.AddToGroupAsync(Context.ConnectionId, $"Siparis_{siparisId}");
-        }
+    // Sipariş durumu güncellendiğinde bildirim gönder
+    public async Task SiparisDurumGuncellendi(int siparisId, string mesaj)
+    {
+        await Clients.All.SendAsync("SiparisDurumGuncellendi", new { siparisId, mesaj });
+    }
+
+    // Belirli bir müşteriye özel bildirim
+    public async Task MusteriBildirimGonder(int uyeId, string mesaj)
+    {
+        await Clients.Group($"customer_{uyeId}").SendAsync("MusteriBildirim", mesaj);
     }
 }
