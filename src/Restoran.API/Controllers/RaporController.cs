@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.Data;
+using Restoran.Data.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,7 +21,7 @@ public class RaporController : ControllerBase
         _context = context;
     }
 
-    // GET: api/rapor/gunluk-ciro?tarih=2026-07-16
+    // GET: api/rapor/gunluk-ciro
     [HttpGet("gunluk-ciro")]
     public async Task<IActionResult> GetGunlukCiro([FromQuery] DateTime? tarih)
     {
@@ -28,13 +29,10 @@ public class RaporController : ControllerBase
 
         if (tarih.HasValue)
         {
-            // Kullanıcı belirli bir tarih istemişse onu kullan
             referansTarih = tarih.Value;
         }
         else
         {
-            // Tarih belirtilmemişse, veritabanındaki EN SON kayıtlı siparişin
-            // tarihini "bugün" olarak kabul et (gerçek takvim tarihi değil)
             var sonSiparisTarihi = await _context.Siparislers
                 .Where(s => s.SiparisTarihi != null)
                 .OrderByDescending(s => s.SiparisTarihi)
@@ -47,24 +45,70 @@ public class RaporController : ControllerBase
         var baslangicTarihi = referansTarih.Date;
         var bitisTarihi = baslangicTarihi.AddDays(1);
 
-        var ciro = await _context.Siparislers
-            .Where(s => s.SiparisTarihi >= baslangicTarihi && s.SiparisTarihi < bitisTarihi)
-            .SumAsync(s => s.ToplamTutar);
+        // ============================================================
+        // 1. TOPLAM SATIŞ (İPTAL ve IADE hariç)
+        // ============================================================
+        var toplamSatis = await _context.Siparislers
+            .Where(s => s.SiparisTarihi >= baslangicTarihi && s.SiparisTarihi < bitisTarihi &&
+                       s.SiparisDurumu != "IPTAL" &&
+                       s.SiparisDurumu != "IADE")
+            .SumAsync(s => s.ToplamTutar ?? 0);
 
+        // ============================================================
+        // 2. TOPLAM İADE (ONAYLANMIŞ iadeler)
+        // ============================================================
+        var toplamIade = await _context.Iades
+            .Where(i => i.IadeTarihi >= baslangicTarihi && i.IadeTarihi < bitisTarihi &&
+                       i.IadeDurumu == "ONAYLANDI")
+            .SumAsync(i => i.IadeTutari);
+
+        // ============================================================
+        // 3. NET CİRO = SATIŞ - İADE
+        // ============================================================
+        var netCiro = toplamSatis - toplamIade;
+
+        // ============================================================
+        // 4. SİPARİŞ SAYISI (İPTAL ve IADE hariç)
+        // ============================================================
         var siparisSayisi = await _context.Siparislers
-            .Where(s => s.SiparisTarihi >= baslangicTarihi && s.SiparisTarihi < bitisTarihi)
+            .Where(s => s.SiparisTarihi >= baslangicTarihi && s.SiparisTarihi < bitisTarihi &&
+                       s.SiparisDurumu != "IPTAL" &&
+                       s.SiparisDurumu != "IADE")
             .CountAsync();
 
-        var oncekiGunCiro = await _context.Siparislers
-            .Where(s => s.SiparisTarihi >= baslangicTarihi.AddDays(-1) && s.SiparisTarihi < baslangicTarihi)
-            .SumAsync(s => s.ToplamTutar);
+        // ============================================================
+        //  5. ÖNCEKİ GÜN NET CİRO
+        // ============================================================
+        var oncekiBaslangic = baslangicTarihi.AddDays(-1);
+        var oncekiBitis = baslangicTarihi;
 
+        var oncekiSatis = await _context.Siparislers
+            .Where(s => s.SiparisTarihi >= oncekiBaslangic && s.SiparisTarihi < oncekiBitis &&
+                       s.SiparisDurumu != "IPTAL" &&
+                       s.SiparisDurumu != "IADE")
+            .SumAsync(s => s.ToplamTutar ?? 0);
+
+        var oncekiIade = await _context.Iades
+            .Where(i => i.IadeTarihi >= oncekiBaslangic && i.IadeTarihi < oncekiBitis &&
+                       i.IadeDurumu == "ONAYLANDI")
+            .SumAsync(i => i.IadeTutari);
+
+        var oncekiGunNetCiro = oncekiSatis - oncekiIade;
+
+        // ============================================================
+        // 6. SONUÇ
+        // ============================================================
         return Ok(new
         {
             tarih = referansTarih.ToString("yyyy-MM-dd"),
-            ciro = ciro,
+            ciro = netCiro, // Net ciro (satış - iade)
+            toplamSatis = toplamSatis,
+            toplamIade = toplamIade,
             siparisSayisi = siparisSayisi,
-            oncekiGunCiro = oncekiGunCiro
+            oncekiGunCiro = oncekiGunNetCiro,
+            degisimYuzdesi = oncekiGunNetCiro > 0
+                ? Math.Round(((netCiro - oncekiGunNetCiro) / oncekiGunNetCiro) * 100, 2)
+                : 0
         });
     }
 
@@ -97,58 +141,67 @@ public class RaporController : ControllerBase
         return Ok(result);
     }
 
-    // GET: api/rapor/son-siparisler
+    // Restoran.API/Controllers/RaporController.cs
     [HttpGet("son-siparisler")]
     public async Task<IActionResult> GetSonSiparisler([FromQuery] int adet = 10)
     {
-        // 1. ADIM: Ham verileri çek
         var siparisler = await _context.Siparislers
             .Include(s => s.Masa)
             .Include(s => s.SiparisDetays)
                 .ThenInclude(sd => sd.Urun)
+            .Include(s => s.SiparisDetays)
+                .ThenInclude(sd => sd.Iades)
             .OrderByDescending(s => s.SiparisTarihi)
             .Take(adet)
             .ToListAsync();
 
-        // 2. ADIM: Durum eşleştirme
         var durumMap = new Dictionary<string, string>
+    {
+        { "BEKLEMEDE", "Bekliyor" }, { "HAZIRLANIYOR", "Hazırlanıyor" },
+        { "HAZIR", "Hazır" }, { "TESLIM EDILDI", "Teslim Edildi" },
+        { "TAMAMLANDI", "Tamamlandı" }, { "IPTAL", "İptal" },
+        { "ODENDI", "Ödendi" }, { "IADE", "İade" }, { "KISMI_IADE", "Kısmi İade" }
+    };
+
+        var result = siparisler.Select(s =>
         {
-            { "BEKLEMEDE", "Bekliyor" },
-            { "HAZIRLANIYOR", "Hazırlanıyor" },
-            { "HAZIR", "Hazır" },
-            { "TESLIM EDILDI", "Teslim Edildi" },
-            { "TAMAMLANDI", "Tamamlandı" },
-            { "IPTAL", "İptal" },
-            { "ODENDI", "Ödendi" },
-            { "IADE", "İade" }
-        };
+            bool kismiVeyaTamIade = s.SiparisDurumu == "KISMI_IADE" || s.SiparisDurumu == "IADE";
 
-        // 3. ADIM: Memory'de formatla
-        var result = new List<object>();
+            List<SiparisDetay> gosterilecekDetaylar;
+            decimal gosterilecekTutar;
 
-        foreach (var s in siparisler)
-        {
-            // ✅ Null kontrolü yap
-            var tarih = s.SiparisTarihi ?? DateTime.Now;
-
-            // Detayları formatla
-            var detaylar = s.SiparisDetays.ToList();
-            var icerik = string.Join(", ", detaylar.Take(2).Select(d => d.Adet + "x " + d.Urun.UrunAdi));
-            if (detaylar.Count > 2)
-                icerik += "...";
-
-            var item = new
+            if (kismiVeyaTamIade)
             {
-                siparisNo = "#" + s.SiparisId.ToString(),
-                masa = s.Masa != null ? "Masa " + s.Masa.MasaNo.ToString() : "Paket",
-                icerik = icerik,
-                saat = tarih.Hour.ToString("D2") + ":" + tarih.Minute.ToString("D2"),
-                tutar = s.ToplamTutar,
-                durum = durumMap.ContainsKey(s.SiparisDurumu) ? durumMap[s.SiparisDurumu] : s.SiparisDurumu
-            };
+                // Sadece iade edilen ürün(ler)i göster
+                gosterilecekDetaylar = s.SiparisDetays.Where(d => d.IadeEdildi).ToList();
 
-            result.Add(item);
-        }
+                // Sadece bu ürünlerin ONAYLANMIŞ iade tutarlarının toplamı
+                gosterilecekTutar = gosterilecekDetaylar
+                    .SelectMany(d => d.Iades)
+                    .Where(i => i.IadeDurumu == "ONAYLANDI")
+                    .Sum(i => i.IadeTutari);
+            }
+            else
+            {
+                gosterilecekDetaylar = s.SiparisDetays.ToList();
+                gosterilecekTutar = s.ToplamTutar ?? 0;
+            }
+
+            return new
+            {
+                siparisNo = "#" + s.SiparisId,
+                masa = s.Masa != null ? "Masa " + s.Masa.MasaNo : "Paket",
+                icerik = gosterilecekDetaylar.Any()
+                    ? string.Join(", ", gosterilecekDetaylar.Take(2).Select(d =>
+                        d.Adet + "x " + (d.Urun != null ? d.Urun.UrunAdi : "Bilinmiyor")))
+                      + (gosterilecekDetaylar.Count > 2 ? "..." : "")
+                    : "Ürün yok",
+                saat = s.SiparisTarihi?.ToString("HH:mm") ?? "-",
+                tutar = gosterilecekTutar,
+                durum = durumMap.ContainsKey(s.SiparisDurumu ?? "") ? durumMap[s.SiparisDurumu] : s.SiparisDurumu ?? "Bilinmiyor",
+                iadeMi = kismiVeyaTamIade
+            };
+        }).ToList();
 
         return Ok(result);
     }

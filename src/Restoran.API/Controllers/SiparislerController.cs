@@ -293,42 +293,42 @@ public class SiparislerController : ControllerBase
         });
     }
 
-    // PUT /api/siparisler/{id}/durum -> Sipariş durumunu günceller
+    // Restoran.API/Controllers/SiparislerController.cs
+
     [HttpPut("{id}/durum")]
-    public async Task<IActionResult> DurumGuncelle(int id, [FromBody] SiparisDurumGuncelleDto dto)
+    public async Task<IActionResult> UpdateStatus(int id, [FromBody] SiparisDurumGuncelleDto dto)
     {
-        if (dto == null) return BadRequest();
+        if (dto == null || string.IsNullOrWhiteSpace(dto.SiparisDurumu))
+            return BadRequest(new { Mesaj = "Durum bilgisi gerekli." });
 
         var siparis = await _context.Siparislers.FindAsync(id);
-        if (siparis == null) return NotFound("Durumu güncellenecek sipariş bulunamadı.");
+        if (siparis == null)
+            return NotFound(new { Mesaj = $"Sipariş #{id} bulunamadı." });
 
+        // Güncellenmiş durum listesi
         var gecerliDurumlar = new[] {
-            "BEKLEMEDE",
-            "HAZIRLANIYOR",
-            "HAZIR",
-            "TESLIM EDILDI",
-            "TAMAMLANDI",
-            "IPTAL",
-            "IADE",
-            "ODENDI"
-        };
+        "BEKLEMEDE", "HAZIRLANIYOR", "HAZIR",
+        "TESLIM EDILDI", "TAMAMLANDI",
+        "IPTAL", "ODENDI",
+        "IADE",
+        "KISMI_IADE" 
+    };
 
-        var yeniDurum = dto.SiparisDurumu?.ToUpper()?.Trim()
-            .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C');
+        var yeniDurum = dto.SiparisDurumu.ToUpper().Trim()
+            .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C')
+            .Replace('Ğ', 'G').Replace('Ü', 'U').Replace('Ö', 'O');
 
-        if (string.IsNullOrEmpty(yeniDurum) || !gecerliDurumlar.Contains(yeniDurum))
-            return BadRequest(new
-            {
-                Mesaj = "Geçersiz sipariş durumu. Geçerli değerler: " + string.Join(", ", gecerliDurumlar)
-            });
+        if (!gecerliDurumlar.Contains(yeniDurum))
+            return BadRequest(new { Mesaj = $"Geçersiz durum: {dto.SiparisDurumu}" });
 
         siparis.SiparisDurumu = yeniDurum;
-
         await _context.SaveChangesAsync();
+
         return Ok(new
         {
-            Mesaj = $"Sipariş durumu '{yeniDurum}' olarak güncellendi.",
-            SiparisId = id
+            Mesaj = $"Sipariş #{id} durumu '{yeniDurum}' olarak güncellendi.",
+            SiparisId = id,
+            YeniDurum = yeniDurum
         });
     }
 

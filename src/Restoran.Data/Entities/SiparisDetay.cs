@@ -17,6 +17,8 @@ public partial class SiparisDetay
 
     public int UrunId { get; set; }
 
+    public bool IadeEdildi { get; set; } = false;
+
     public virtual ICollection<Iade> Iades { get; set; } = new List<Iade>();
 
     public virtual Siparisler Siparis { get; set; } = null!;

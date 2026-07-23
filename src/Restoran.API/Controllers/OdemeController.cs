@@ -26,6 +26,7 @@ public class OdemeController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         var odemeler = await _context.Odemes
+            .OrderByDescending(o => o.OdemeTarihi)
             .Select(o => new
             {
                 o.OdemeId,
