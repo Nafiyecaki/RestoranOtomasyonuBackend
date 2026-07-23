@@ -63,6 +63,7 @@ public class IadeController : ControllerBase
         return Ok(iade);
     }
 
+    // POST /api/Iade
     [HttpPost]
     public async Task<IActionResult> IadeAl([FromBody] IadeEkleDto dto)
     {
@@ -72,9 +73,27 @@ public class IadeController : ControllerBase
         if (dto.IadeTutari <= 0)
             return BadRequest(new { Mesaj = "İade tutarı geçerli olmalı." });
 
-        // SiparisDetayId kontrolü
-        if (!dto.SiparisDetayId.HasValue)
-            return BadRequest(new { Mesaj = "Sipariş detay ID gerekli." });
+        // 🆕 SiparisDetayId verilmişse gerçekten var mı kontrol et
+        SiparisDetay? detay = null;
+        if (dto.SiparisDetayId.HasValue)
+        {
+            detay = await _context.SiparisDetays.FindAsync(dto.SiparisDetayId.Value);
+            if (detay == null)
+                return NotFound(new { Mesaj = "İlgili sipariş kalemi bulunamadı." });
+
+            // 🆕 Aynı kalem daha önce iade edilmiş mi?
+            var dahaOnceIadeEdilmis = await _context.Iades
+                .AnyAsync(i => i.SiparisDetayId == dto.SiparisDetayId && i.IadeDurumu != "REDDEDILDI");
+            if (dahaOnceIadeEdilmis)
+                return BadRequest(new { Mesaj = "Bu ürün için zaten bir iade kaydı var." });
+        }
+
+        // 🆕 Durum sabit listeyle doğrulanıyor (DurumGuncelle ile tutarlı)
+        var gecerliDurumlar = new[] { "BEKLEMEDE", "ONAYLANDI", "REDDEDILDI" };
+        var durum = (dto.IadeDurumu ?? "BEKLEMEDE").ToUpper().Trim()
+            .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C');
+        if (!gecerliDurumlar.Contains(durum))
+            return BadRequest(new { Mesaj = "Geçersiz iade durumu." });
 
         var iade = new Iade
         {
@@ -98,8 +117,6 @@ public class IadeController : ControllerBase
             iade.IadeTarihi
         });
     }
-
-
     [HttpPut("{id}/durum")]
     public async Task<IActionResult> DurumGuncelle(int id, [FromBody] IadeDurumGuncelleDto dto)
     {
@@ -122,8 +139,8 @@ public class IadeController : ControllerBase
         if (iade.IadeDurumu == "ONAYLANDI")
             return BadRequest(new { Mesaj = "Zaten onaylanmış bir iade tekrar güncellenemez." });
 
-        // ONAYLANDI ise iade işlemini uygula
-        if (yeniDurum == "ONAYLANDI")
+        // 🆕 Onaylanınca ilgili siparişin toplam tutarından düş
+        if (yeniDurum == "ONAYLANDI" && iade.SiparisDetayId.HasValue)
         {
             // SiparişDetay üzerinden Sipariş'i ve TÜM detaylarını çek
             var detay = await _context.SiparisDetays
@@ -156,9 +173,7 @@ public class IadeController : ControllerBase
         });
     }
 
-
     // DELETE /api/Iade/{id}
-    // Hatalı girilen bir iade kaydını sistemden tamamen kaldırmak veya iptal etmek için
     [HttpDelete("{id}")]
     public async Task<IActionResult> Sil(int id)
     {
@@ -170,5 +185,4 @@ public class IadeController : ControllerBase
 
         return Ok(new { Mesaj = "İade kaydı sistemden başarıyla silindi." });
     }
-
 }
