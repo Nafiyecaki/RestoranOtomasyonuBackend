@@ -49,6 +49,8 @@ public partial class DbRestoranContext : DbContext
     public virtual DbSet<Urunler> Urunlers { get; set; }
 
     public virtual DbSet<Uyeler> Uyelers { get; set; }
+
+    public virtual DbSet<MalzemeTalep> MalzemeTalepleri { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Adres>(entity =>
