@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.API.Dtos;
+using Restoran.API.Dtos.Restoran.API.Dtos;
 using Restoran.Data;
 using Restoran.Data.Entities;
 using System;
@@ -31,11 +32,14 @@ namespace Restoran.API.Controllers
         {
             try
             {
-                // ✅ DÜZELTİLDİ: Malzemelers kullan
+                // Malzeme kontrolü
                 var malzeme = await _context.Malzemelers.FindAsync(dto.MalzemeId);
                 if (malzeme == null)
-                    return NotFound("Malzeme bulunamadı.");
+                {
+                    return NotFound(new { message = "Malzeme bulunamadı." });
+                }
 
+                // Talep eden kişiyi bul
                 var talepEden = "Aşçı";
                 if (dto.PersonelId.HasValue)
                 {
@@ -50,8 +54,8 @@ namespace Restoran.API.Controllers
                 var talep = new MalzemeTalep
                 {
                     MalzemeId = dto.MalzemeId,
-                    Miktar = dto.Miktar,
-                    Birim = dto.Birim,
+                    Miktar = (int)dto.Miktar,
+                    Birim = dto.Birim ?? "adet",
                     TalepEden = talepEden,
                     PersonelId = dto.PersonelId,
                     Durum = "BEKLIYOR",
@@ -65,6 +69,7 @@ namespace Restoran.API.Controllers
 
                 return Ok(new
                 {
+                    success = true,
                     message = "Malzeme talebi başarıyla oluşturuldu.",
                     talepId = talep.TalepId,
                     durum = talep.Durum
@@ -72,7 +77,7 @@ namespace Restoran.API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Sunucu hatası: {ex.Message}");
+                return StatusCode(500, new { message = $"Sunucu hatası: {ex.Message}" });
             }
         }
 
@@ -82,26 +87,33 @@ namespace Restoran.API.Controllers
         [HttpGet("bekleyen-talepler")]
         public async Task<IActionResult> GetBekleyenTalepler()
         {
-            var talepler = await _context.MalzemeTalepleri
-                .Where(t => t.Durum == "BEKLIYOR" && t.IsActive == true)
-                .Include(t => t.Malzeme)
-                .OrderByDescending(t => t.TalepTarihi)
-                .Select(t => new MalzemeTalepDto
-                {
-                    TalepId = t.TalepId,
-                    MalzemeId = t.MalzemeId,
-                    MalzemeAdi = t.Malzeme.MalzemeAdi,
-                    Miktar = t.Miktar,
-                    Birim = t.Birim,
-                    TalepEden = t.TalepEden,
-                    PersonelId = t.PersonelId,
-                    Durum = t.Durum,
-                    Aciklama = t.Aciklama,
-                    TalepTarihi = t.TalepTarihi
-                })
-                .ToListAsync();
+            try
+            {
+                var talepler = await _context.MalzemeTalepleri
+                    .Where(t => t.Durum == "BEKLIYOR" && t.IsActive == true)
+                    .Include(t => t.Malzeme)
+                    .OrderByDescending(t => t.TalepTarihi)
+                    .Select(t => new
+                    {
+                        t.TalepId,
+                        t.MalzemeId,
+                        MalzemeAdi = t.Malzeme.MalzemeAdi,
+                        t.Miktar,
+                        t.Birim,
+                        t.TalepEden,
+                        t.PersonelId,
+                        t.Durum,
+                        t.Aciklama,
+                        t.TalepTarihi
+                    })
+                    .ToListAsync();
 
-            return Ok(talepler);
+                return Ok(talepler);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = $"Sunucu hatası: {ex.Message}" });
+            }
         }
 
         // ============================================================
@@ -110,35 +122,42 @@ namespace Restoran.API.Controllers
         [HttpGet("tum-talepler")]
         public async Task<IActionResult> GetAllTalepler([FromQuery] string? durum = null)
         {
-            var query = _context.MalzemeTalepleri
-                .Include(t => t.Malzeme)
-                .Where(t => t.IsActive == true);
-
-            if (!string.IsNullOrEmpty(durum))
+            try
             {
-                query = query.Where(t => t.Durum == durum);
-            }
+                var query = _context.MalzemeTalepleri
+                    .Include(t => t.Malzeme)
+                    .Where(t => t.IsActive == true);
 
-            var talepler = await query
-                .OrderByDescending(t => t.TalepTarihi)
-                .Select(t => new MalzemeTalepDto
+                if (!string.IsNullOrEmpty(durum))
                 {
-                    TalepId = t.TalepId,
-                    MalzemeId = t.MalzemeId,
-                    MalzemeAdi = t.Malzeme.MalzemeAdi,
-                    Miktar = t.Miktar,
-                    Birim = t.Birim,
-                    TalepEden = t.TalepEden,
-                    PersonelId = t.PersonelId,
-                    Durum = t.Durum,
-                    Aciklama = t.Aciklama,
-                    TalepTarihi = t.TalepTarihi,
-                    CevaplamaTarihi = t.CevaplamaTarihi,
-                    Cevaplayan = t.Cevaplayan
-                })
-                .ToListAsync();
+                    query = query.Where(t => t.Durum == durum);
+                }
 
-            return Ok(talepler);
+                var talepler = await query
+                    .OrderByDescending(t => t.TalepTarihi)
+                    .Select(t => new
+                    {
+                        t.TalepId,
+                        t.MalzemeId,
+                        MalzemeAdi = t.Malzeme.MalzemeAdi,
+                        t.Miktar,
+                        t.Birim,
+                        t.TalepEden,
+                        t.PersonelId,
+                        t.Durum,
+                        t.Aciklama,
+                        t.TalepTarihi,
+                        t.CevaplamaTarihi,
+                        t.Cevaplayan
+                    })
+                    .ToListAsync();
+
+                return Ok(talepler);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = $"Sunucu hatası: {ex.Message}" });
+            }
         }
 
         // ============================================================
@@ -151,19 +170,18 @@ namespace Restoran.API.Controllers
             {
                 var talep = await _context.MalzemeTalepleri.FindAsync(talepId);
                 if (talep == null)
-                    return NotFound("Talep bulunamadı.");
+                    return NotFound(new { message = "Talep bulunamadı." });
 
                 if (talep.Durum != "BEKLIYOR")
-                    return BadRequest($"Bu talep zaten '{talep.Durum}' durumunda.");
+                    return BadRequest(new { message = $"Bu talep zaten '{talep.Durum}' durumunda." });
 
                 if (dto.Durum != "ONAYLANDI" && dto.Durum != "REDDEDILDI")
-                    return BadRequest("Geçersiz durum. ONAYLANDI veya REDDEDILDI olmalı.");
+                    return BadRequest(new { message = "Geçersiz durum. ONAYLANDI veya REDDEDILDI olmalı." });
 
                 talep.Durum = dto.Durum;
                 talep.CevaplamaTarihi = DateTime.Now;
                 talep.Cevaplayan = dto.Cevaplayan ?? "Admin";
 
-                // ✅ DÜZELTİLDİ: Stok işlemini kaldırdım (Stok tablosu yok)
                 // Onaylandıysa Malzeme stok miktarını güncelle
                 if (dto.Durum == "ONAYLANDI")
                 {
@@ -178,6 +196,7 @@ namespace Restoran.API.Controllers
 
                 return Ok(new
                 {
+                    success = true,
                     message = $"Talep #{talepId} {dto.Durum} olarak cevaplandı.",
                     talepId = talep.TalepId,
                     durum = talep.Durum
@@ -185,7 +204,7 @@ namespace Restoran.API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Sunucu hatası: {ex.Message}");
+                return StatusCode(500, new { message = $"Sunucu hatası: {ex.Message}" });
             }
         }
 
@@ -195,14 +214,21 @@ namespace Restoran.API.Controllers
         [HttpDelete("talep-sil/{talepId}")]
         public async Task<IActionResult> TalepSil(int talepId)
         {
-            var talep = await _context.MalzemeTalepleri.FindAsync(talepId);
-            if (talep == null)
-                return NotFound("Talep bulunamadı.");
+            try
+            {
+                var talep = await _context.MalzemeTalepleri.FindAsync(talepId);
+                if (talep == null)
+                    return NotFound(new { message = "Talep bulunamadı." });
 
-            talep.IsActive = false;
-            await _context.SaveChangesAsync();
+                talep.IsActive = false;
+                await _context.SaveChangesAsync();
 
-            return Ok(new { message = $"Talep #{talepId} silindi." });
+                return Ok(new { success = true, message = $"Talep #{talepId} silindi." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = $"Sunucu hatası: {ex.Message}" });
+            }
         }
     }
 }
