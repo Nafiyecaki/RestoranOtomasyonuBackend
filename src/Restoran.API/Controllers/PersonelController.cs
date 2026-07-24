@@ -22,8 +22,7 @@ public class PersonelController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         var personeller = await _context.Personels
-            .Include(p => p.Rol)  // ← ROL TABLOSUNU DAHİL ET!
-            .Where(p => p.IsActive == true)
+            .Include(p => p.Rol)
             .Select(p => new
             {
                 p.PersonelId,
@@ -35,7 +34,8 @@ public class PersonelController : ControllerBase
                 p.IseBaslamaTarihi,
                 p.Maas,
                 p.RolId,
-                RolAdi = p.Rol != null ? p.Rol.RolAdi : "Bilinmiyor"  // ← ROL ADI
+                p.IsActive,
+                RolAdi = p.Rol != null ? p.Rol.RolAdi : "Bilinmiyor"
             })
             .ToListAsync();
 
@@ -47,7 +47,7 @@ public class PersonelController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var personel = await _context.Personels
-            .Include(p => p.Rol)  // ← ROL TABLOSUNU DAHİL ET!
+            .Include(p => p.Rol)
             .Where(p => p.PersonelId == id)
             .Select(p => new
             {
@@ -60,7 +60,8 @@ public class PersonelController : ControllerBase
                 p.IseBaslamaTarihi,
                 p.Maas,
                 p.RolId,
-                RolAdi = p.Rol != null ? p.Rol.RolAdi : "Bilinmiyor"  // ← ROL ADI
+                p.IsActive,
+                RolAdi = p.Rol != null ? p.Rol.RolAdi : "Bilinmiyor" 
             })
             .FirstOrDefaultAsync();
 

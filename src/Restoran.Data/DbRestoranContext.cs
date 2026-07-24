@@ -51,8 +51,19 @@ public partial class DbRestoranContext : DbContext
     public virtual DbSet<Uyeler> Uyelers { get; set; }
 
     public virtual DbSet<MalzemeTalep> MalzemeTalepleri { get; set; }
+
+    // 🔥 YENİ: Personel İzin Geçmişi View'i
+    public virtual DbSet<vw_PersonelIzin_Gecmisi> vw_PersonelIzin_Gecmisi { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // 🔥 View'i tanımla (önce tanımla, sonra diğer entity'ler)
+        modelBuilder.Entity<vw_PersonelIzin_Gecmisi>(entity =>
+        {
+            entity.HasNoKey(); // View'in primary key'i yok
+            entity.ToView("vw_PersonelIzin_Gecmisi"); // View adı
+        });
+
         modelBuilder.Entity<Adres>(entity =>
         {
             entity.HasKey(e => e.AdresId).HasName("PK__Adres__DA8DEA6C0FC10825");

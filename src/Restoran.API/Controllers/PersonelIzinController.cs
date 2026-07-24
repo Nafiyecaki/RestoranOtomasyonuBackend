@@ -21,15 +21,20 @@ public class PersonelIzinController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var izinler = await _context.PersonelIzins
-            .Select(i => new
+        var izinler = await (
+            from v in _context.vw_PersonelIzin_Gecmisi
+            join i in _context.PersonelIzins on v.IzinID equals i.IzinId into izinJoin
+            from i in izinJoin.DefaultIfEmpty()
+            select new
             {
-                i.IzinId,
-                i.IzinBaslangic,
-                i.IzinBitis,
-                i.IzinDurumu,
-                i.IzinAciklamasi,
-                i.PersonelId
+                v.IzinID,
+                v.PersonelID,
+                PersonelAdSoyad = v.PersonelAdSoyad ?? "Bilinmiyor",
+                v.IzinBaslangic,
+                v.IzinBitis,
+                v.IzinGunSayisi,
+                v.IzinAciklamasi,
+                IzinTipi = i != null ? i.IzinAciklamasi : null
             })
             .ToListAsync();
 
@@ -41,6 +46,7 @@ public class PersonelIzinController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var izin = await _context.PersonelIzins
+            .Include(i => i.Personel)
             .Where(i => i.IzinId == id)
             .Select(i => new
             {
@@ -49,7 +55,9 @@ public class PersonelIzinController : ControllerBase
                 i.IzinBitis,
                 i.IzinDurumu,
                 i.IzinAciklamasi,
-                i.PersonelId
+                i.PersonelId,
+                PersonelAdi = i.Personel != null ? i.Personel.PersonelAdi : null,
+                PersonelSoyadi = i.Personel != null ? i.Personel.PersonelSoyadi : null
             })
             .FirstOrDefaultAsync();
 
@@ -66,6 +74,7 @@ public class PersonelIzinController : ControllerBase
         if (!personelVarMi) return NotFound("İzin geçmişi aranacak personel sistemde bulunamadı.");
 
         var izinler = await _context.PersonelIzins
+            .Include(i => i.Personel)
             .Where(i => i.PersonelId == personelId)
             .Select(i => new
             {
@@ -74,7 +83,9 @@ public class PersonelIzinController : ControllerBase
                 i.IzinBitis,
                 i.IzinDurumu,
                 i.IzinAciklamasi,
-                i.PersonelId
+                i.PersonelId,
+                PersonelAdi = i.Personel != null ? i.Personel.PersonelAdi : null,
+                PersonelSoyadi = i.Personel != null ? i.Personel.PersonelSoyadi : null
             })
             .ToListAsync();
 
