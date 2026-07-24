@@ -160,40 +160,81 @@ public class SiparislerController : ControllerBase
         }
 
         // ============================================================
-        //  ADIM 2: MASA KONTROLÜ
+        //  ADIM 2: VAR OLAN AKTİF SİPARİŞE Mİ EKLENİYOR, YOKSA YENİ Mİ AÇILIYOR?
         // ============================================================
-        if (dto.MasaId.HasValue)
+        Siparisler siparis = null;
+        bool mevcutSiparisEklemesi = false;
+
+        // 🔑 Frontend var olan siparişe ekleme yapmak istiyorsa SiparisId gönderir
+        if (dto.SiparisId.HasValue && dto.SiparisId.Value > 0)
         {
-            var masa = await _context.Masas.FindAsync(dto.MasaId.Value);
-            if (masa == null)
-                return NotFound(new { Mesaj = $"ID'si {dto.MasaId} olan masa bulunamadı." });
+            siparis = await _context.Siparislers
+                .Include(s => s.SiparisDetays)
+                .FirstOrDefaultAsync(s => s.SiparisId == dto.SiparisId.Value);
 
-            // Masa zaten dolu mu kontrol et
-            if (masa.MasaDurumu == "DOLU")
+            if (siparis != null &&
+                siparis.SiparisDurumu != "IPTAL" &&
+                siparis.SiparisDurumu != "TAMAMLANDI" &&
+                siparis.SiparisDurumu != "ODENDI")
             {
-                return BadRequest(new { Mesaj = $"Masa '{masa.MasaNo}' zaten dolu!" });
+                mevcutSiparisEklemesi = true;
             }
+        }
 
-            masa.MasaDurumu = "DOLU";
+        // 🔑 GÜVENLİK KONTROLÜ: Frontend doğru SiparisId göndermemiş olsa bile,
+        // aynı masada zaten aktif (kapanmamış) bir sipariş varsa YENİ sipariş açma,
+        // var olana ekle. Bu, aynı masada birden fazla paralel "BEKLEMEDE" sipariş
+        // oluşmasını ve "Masa zaten dolu!" diye siparişin tamamen reddedilmesini engeller.
+        if (!mevcutSiparisEklemesi && dto.MasaId.HasValue)
+        {
+            var masadakiAktifSiparis = await _context.Siparislers
+                .Include(s => s.SiparisDetays)
+                .Where(s => s.MasaId == dto.MasaId.Value
+                    && s.SiparisDurumu != "IPTAL"
+                    && s.SiparisDurumu != "TAMAMLANDI"
+                    && s.SiparisDurumu != "ODENDI")
+                .OrderByDescending(s => s.SiparisTarihi)
+                .FirstOrDefaultAsync();
+
+            if (masadakiAktifSiparis != null)
+            {
+                siparis = masadakiAktifSiparis;
+                mevcutSiparisEklemesi = true;
+            }
         }
 
         // ============================================================
-        //  ADIM 3: SİPARİŞ OLUŞTUR
+        //  ADIM 3: MASA KONTROLÜ VE SİPARİŞ OLUŞTUR (sadece gerçekten yeniyse)
         // ============================================================
-        var siparis = new Siparisler
+        if (!mevcutSiparisEklemesi)
         {
-            SiparisTarihi = DateTime.Now,
-            SiparisDurumu = "BEKLEMEDE",
-            SiparisTipi = dto.SiparisTipi ?? "SALON",
-            UyeId = dto.UyeId,
-            MasaId = dto.MasaId,
-            PersonelId = dto.PersonelId,
-            ToplamTutar = 0
-        };
+            if (dto.MasaId.HasValue)
+            {
+                var masa = await _context.Masas.FindAsync(dto.MasaId.Value);
+                if (masa == null)
+                    return NotFound(new { Mesaj = $"ID'si {dto.MasaId} olan masa bulunamadı." });
 
-        decimal toplamTutar = 0;
-        var siparisDetaylari = new List<SiparisDetay>();
+                masa.MasaDurumu = "DOLU";
+            }
 
+            siparis = new Siparisler
+            {
+                SiparisTarihi = DateTime.Now,
+                SiparisDurumu = "BEKLEMEDE",
+                SiparisTipi = dto.SiparisTipi ?? "SALON",
+                UyeId = dto.UyeId,
+                MasaId = dto.MasaId,
+                PersonelId = dto.PersonelId,
+                ToplamTutar = 0,
+                SiparisDetays = new List<SiparisDetay>()
+            };
+
+            await _context.Siparislers.AddAsync(siparis);
+        }
+
+        // ============================================================
+        //  ADIM 4: ÜRÜNLERİ EKLE (hem yeni sipariş hem mevcut sipariş için ortak akış)
+        // ============================================================
         foreach (var d in dto.Detaylar)
         {
             var urun = await _context.Urunlers.FindAsync(d.UrunId);
@@ -201,28 +242,29 @@ public class SiparislerController : ControllerBase
                 return NotFound(new { Mesaj = $"ID'si {d.UrunId} olan ürün sistemde bulunamadı." });
 
             int adet = d.Adet <= 0 ? 1 : d.Adet;
-            decimal birimFiyat = urun.Fiyat;
-            decimal satirToplami = adet * birimFiyat;
 
-            var detay = new SiparisDetay
+            siparis.SiparisDetays.Add(new SiparisDetay
             {
                 UrunId = d.UrunId,
                 Adet = adet,
-                BirimFiyat = birimFiyat,
+                BirimFiyat = urun.Fiyat,
                 DetayNot = d.DetayNot ?? ""
-            };
-
-            siparisDetaylari.Add(detay);
-            toplamTutar += satirToplami;
+            });
         }
 
-        siparis.SiparisDetays = siparisDetaylari;
-        siparis.ToplamTutar = toplamTutar;
+        // Toplam tutarı tüm kalemlerden (eskiler + yeniler) yeniden hesapla
+        siparis.ToplamTutar = siparis.SiparisDetays.Sum(x => x.Adet * x.BirimFiyat);
 
-        await _context.Siparislers.AddAsync(siparis);
+        // Mevcut siparişe ekleme yapıldıysa masa durumunu garanti altına al
+        if (mevcutSiparisEklemesi && siparis.MasaId.HasValue)
+        {
+            var masa = await _context.Masas.FindAsync(siparis.MasaId.Value);
+            if (masa != null) masa.MasaDurumu = "DOLU";
+        }
+
         await _context.SaveChangesAsync();
 
-        // Oluşturulan siparişi detaylarıyla birlikte geri döndür
+        // Oluşturulan/güncellenen siparişi detaylarıyla birlikte geri döndür
         var createdOrder = await _context.Siparislers
             .Where(s => s.SiparisId == siparis.SiparisId)
             .Select(s => new
@@ -248,7 +290,9 @@ public class SiparislerController : ControllerBase
 
         return Ok(new
         {
-            Mesaj = " Sipariş başarıyla oluşturuldu ve stok kontrolü geçti.",
+            Mesaj = mevcutSiparisEklemesi
+                ? "Mevcut siparişe ürün(ler) başarıyla eklendi."
+                : "Sipariş ve detayları başarıyla oluşturuldu ve stok kontrolü geçti.",
             SiparisId = siparis.SiparisId,
             HesaplananToplamTutar = siparis.ToplamTutar,
             Siparis = createdOrder
@@ -387,7 +431,7 @@ public class SiparislerController : ControllerBase
         "TESLIM EDILDI", "TAMAMLANDI",
         "IPTAL", "ODENDI",
         "IADE",
-        "KISMI_IADE" 
+        "KISMI_IADE"
     };
 
         var yeniDurum = dto.SiparisDurumu.ToUpper().Trim()

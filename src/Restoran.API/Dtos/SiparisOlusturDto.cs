@@ -4,6 +4,7 @@ namespace Restoran.API.Dtos
 {
     public class SiparisOlusturDto
     {
+        public int? SiparisId { get; set; }
         public int? MasaId { get; set; }
         public int? UyeId { get; set; }
         public int? PersonelId { get; set; }
