@@ -104,14 +104,91 @@ public class SiparislerController : ControllerBase
         if (dto.Detaylar == null || !dto.Detaylar.Any())
             return BadRequest("Sipariş oluşturmak için en az bir ürün eklemelisiniz.");
 
+        var stokHataMesajlari = new List<string>();
+        var stokHataDetaylari = new List<object>();
+
+        foreach (var d in dto.Detaylar)
+        {
+            var urun = await _context.Urunlers
+                .Include(u => u.UrunRecetesis)
+                .ThenInclude(r => r.Malzeme)
+                .FirstOrDefaultAsync(u => u.UrunId == d.UrunId);
+
+            if (urun == null)
+            {
+                return NotFound(new { Mesaj = $"ID'si {d.UrunId} olan ürün sistemde bulunamadı." });
+            }
+
+            // Ürünün reçetesi var mı kontrol et
+            if (urun.UrunRecetesis == null || !urun.UrunRecetesis.Any())
+            {
+                // Reçetesi olmayan ürünler için stok kontrolü yapma (isteğe bağlı)
+                // Not: Reçetesiz ürünler stoktan düşmez, sadece satılır
+                continue;
+            }
+
+            int adet = d.Adet <= 0 ? 1 : d.Adet;
+
+            foreach (var recete in urun.UrunRecetesis)
+            {
+                var malzeme = recete.Malzeme;
+                if (malzeme == null) continue;
+
+                var gerekliMiktar = recete.KullanimMiktari * adet;
+
+                if (malzeme.StokMiktari < gerekliMiktar)
+                {
+                    var hataMesaji = $"❌ '{urun.UrunAdi}' ürünü için '{malzeme.MalzemeAdi}' yetersiz! " +
+                        $"Gerekli: {gerekliMiktar:F2} {malzeme.Birim}, " +
+                        $"Mevcut: {malzeme.StokMiktari:F2} {malzeme.Birim}";
+
+                    stokHataMesajlari.Add(hataMesaji);
+                    stokHataDetaylari.Add(new
+                    {
+                        UrunAdi = urun.UrunAdi,
+                        MalzemeAdi = malzeme.MalzemeAdi,
+                        GerekliMiktar = gerekliMiktar,
+                        MevcutStok = malzeme.StokMiktari,
+                        Birim = malzeme.Birim,
+                        Adet = adet
+                    });
+                }
+            }
+        }
+
+        // Stok hatası varsa siparişi oluşturma
+        if (stokHataMesajlari.Any())
+        {
+            return BadRequest(new
+            {
+                Mesaj = "❌ Stok yetersiz! Sipariş oluşturulamadı.",
+                HataKodu = "STOK_YETERSIZ",
+                Hatalar = stokHataMesajlari,
+                Detaylar = stokHataDetaylari
+            });
+        }
+
+        // ============================================================
+        //  ADIM 2: MASA KONTROLÜ
+        // ============================================================
         if (dto.MasaId.HasValue)
         {
             var masa = await _context.Masas.FindAsync(dto.MasaId.Value);
             if (masa == null)
-                return NotFound($"ID'si {dto.MasaId} olan masa bulunamadı.");
+                return NotFound(new { Mesaj = $"ID'si {dto.MasaId} olan masa bulunamadı." });
+
+            // Masa zaten dolu mu kontrol et
+            if (masa.MasaDurumu == "DOLU")
+            {
+                return BadRequest(new { Mesaj = $"Masa '{masa.MasaNo}' zaten dolu!" });
+            }
+
             masa.MasaDurumu = "DOLU";
         }
 
+        // ============================================================
+        //  ADIM 3: SİPARİŞ OLUŞTUR
+        // ============================================================
         var siparis = new Siparisler
         {
             SiparisTarihi = DateTime.Now,
@@ -130,7 +207,7 @@ public class SiparislerController : ControllerBase
         {
             var urun = await _context.Urunlers.FindAsync(d.UrunId);
             if (urun == null)
-                return NotFound($"ID'si {d.UrunId} olan ürün sistemde bulunamadı.");
+                return NotFound(new { Mesaj = $"ID'si {d.UrunId} olan ürün sistemde bulunamadı." });
 
             int adet = d.Adet <= 0 ? 1 : d.Adet;
             decimal birimFiyat = urun.Fiyat;
@@ -186,7 +263,7 @@ public class SiparislerController : ControllerBase
 
         return Ok(new
         {
-            Mesaj = "Sipariş ve detayları başarıyla oluşturuldu.",
+            Mesaj = " Sipariş başarıyla oluşturuldu ve stok kontrolü geçti.",
             SiparisId = siparis.SiparisId,
             HesaplananToplamTutar = siparis.ToplamTutar,
             Siparis = createdOrder
