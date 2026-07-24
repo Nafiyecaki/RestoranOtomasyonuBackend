@@ -63,8 +63,9 @@ public class IadeController : ControllerBase
         return Ok(iade);
     }
 
-    // POST /api/Iade
+    // POST /api/Iade veya POST /api/Iade/siparis-iade
     [HttpPost]
+    [HttpPost("siparis-iade")]
     public async Task<IActionResult> IadeAl([FromBody] IadeEkleDto dto)
     {
         if (dto == null || string.IsNullOrWhiteSpace(dto.IadeSebebi))
@@ -73,7 +74,7 @@ public class IadeController : ControllerBase
         if (dto.IadeTutari <= 0)
             return BadRequest(new { Mesaj = "İade tutarı geçerli olmalı." });
 
-        // 🆕 SiparisDetayId verilmişse gerçekten var mı kontrol et
+        // SiparisDetayId verilmişse gerçekten var mı kontrol et
         SiparisDetay? detay = null;
         if (dto.SiparisDetayId.HasValue)
         {
@@ -81,14 +82,14 @@ public class IadeController : ControllerBase
             if (detay == null)
                 return NotFound(new { Mesaj = "İlgili sipariş kalemi bulunamadı." });
 
-            // 🆕 Aynı kalem daha önce iade edilmiş mi?
+            // Aynı kalem daha önce iade edilmiş mi?
             var dahaOnceIadeEdilmis = await _context.Iades
                 .AnyAsync(i => i.SiparisDetayId == dto.SiparisDetayId && i.IadeDurumu != "REDDEDILDI");
             if (dahaOnceIadeEdilmis)
                 return BadRequest(new { Mesaj = "Bu ürün için zaten bir iade kaydı var." });
         }
 
-        // 🆕 Durum sabit listeyle doğrulanıyor (DurumGuncelle ile tutarlı)
+        // Durum sabit listeyle doğrulanıyor (DurumGuncelle ile tutarlı)
         var gecerliDurumlar = new[] { "BEKLEMEDE", "ONAYLANDI", "REDDEDILDI" };
         var durum = (dto.IadeDurumu ?? "BEKLEMEDE").ToUpper().Trim()
             .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C');
