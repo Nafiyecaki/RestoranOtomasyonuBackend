@@ -25,7 +25,7 @@ namespace Restoran.Data.Entities
 
         [Required]
         [MaxLength(100)]
-        public string TalepEden { get; set; }
+        public string TalepEden { get; set; } = string.Empty;
 
         public int? PersonelId { get; set; }
 
@@ -34,14 +34,15 @@ namespace Restoran.Data.Entities
         public string Durum { get; set; } = "BEKLIYOR";
 
         [MaxLength(500)]
-        public string Aciklama { get; set; }
+        public string? Aciklama { get; set; }
 
         public DateTime TalepTarihi { get; set; } = DateTime.Now;
 
+        // ✅ BU ALANLARI EKLEYİN (Eğer veritabanında yoksa migration oluşturun)
         public DateTime? CevaplamaTarihi { get; set; }
 
         [MaxLength(100)]
-        public string Cevaplayan { get; set; }
+        public string? Cevaplayan { get; set; }
 
         public bool IsActive { get; set; } = true;
     }
