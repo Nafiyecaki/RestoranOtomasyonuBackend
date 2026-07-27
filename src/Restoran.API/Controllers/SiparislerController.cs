@@ -229,7 +229,7 @@ public class SiparislerController : ControllerBase
             siparis = new Siparisler
             {
                 SiparisTarihi = DateTime.Now,
-                SiparisDurumu = "BEKLEMEDE",
+                SiparisDurumu = "HAZIRLANIYOR",
                 SiparisTipi = dto.SiparisTipi ?? "SALON",
                 UyeId = dto.UyeId,
                 MasaId = dto.MasaId,
@@ -251,18 +251,45 @@ public class SiparislerController : ControllerBase
                 return NotFound(new { Mesaj = $"ID'si {d.UrunId} olan ürün sistemde bulunamadı." });
 
             int adet = d.Adet <= 0 ? 1 : d.Adet;
+            string detayNot = d.DetayNot ?? "";
 
-            siparis.SiparisDetays.Add(new SiparisDetay
+            // 🔑 Aynı üründen, aynı notla siparişte zaten bir satır varsa
+            // (örn. çift tıklama sonucu aynı istek iki kez gitmiş olabilir),
+            // yeni bir satır daha açmak yerine mevcut satırın miktarını artır.
+            var mevcutDetay = siparis.SiparisDetays
+                .FirstOrDefault(sd => sd.UrunId == d.UrunId && (sd.DetayNot ?? "") == detayNot);
+
+            if (mevcutDetay != null)
             {
-                UrunId = d.UrunId,
-                Adet = adet,
-                BirimFiyat = urun.Fiyat,
-                DetayNot = d.DetayNot ?? ""
-            });
+                mevcutDetay.Adet += adet;
+            }
+            else
+            {
+                siparis.SiparisDetays.Add(new SiparisDetay
+                {
+                    UrunId = d.UrunId,
+                    Adet = adet,
+                    BirimFiyat = urun.Fiyat,
+                    DetayNot = detayNot
+                });
+            }
         }
 
         // Toplam tutarı tüm kalemlerden (eskiler + yeniler) yeniden hesapla
         siparis.ToplamTutar = siparis.SiparisDetays.Sum(x => x.Adet * x.BirimFiyat);
+
+        // 🔑 Var olan siparişe yeni ürün eklendiyse ve sipariş zaten
+        // HAZIR / TESLIM EDILDI gibi ileri bir aşamadaysa, yeni eklenen
+        // ürünler henüz hazırlanmadığı için siparişi tekrar "HAZIRLANIYOR"
+        // durumuna çekiyoruz ki mutfak akışında yeniden görünsün.
+        if (mevcutSiparisEklemesi)
+        {
+            var ileriDurumlar = new[] { "HAZIR", "TESLIM EDILDI" };
+            if (ileriDurumlar.Contains(siparis.SiparisDurumu))
+            {
+                siparis.SiparisDurumu = "HAZIRLANIYOR";
+            }
+        }
 
         // Mevcut siparişe ekleme yapıldıysa masa durumunu garanti altına al
         if (mevcutSiparisEklemesi && siparis.MasaId.HasValue)
