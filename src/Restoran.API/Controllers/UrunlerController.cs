@@ -33,7 +33,8 @@ public class UrunlerController : ControllerBase
                 u.Fiyat,
                 u.StokMiktari,
                 u.Aciklamalar,
-                IsActive = u.IsActive,  // ✅ Olduğu gibi gönder (null, true, false)
+                IsActive = u.IsActive,
+                KategoriId = u.KategoriId,
                 KategoriAdi = u.Kategori != null ? u.Kategori.KategoriAdi : null,
                 u.SilinmeTarihi
             })

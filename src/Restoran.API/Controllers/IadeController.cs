@@ -118,6 +118,8 @@ public class IadeController : ControllerBase
             iade.IadeTarihi
         });
     }
+
+
     [HttpPut("{id}/durum")]
     public async Task<IActionResult> DurumGuncelle(int id, [FromBody] IadeDurumGuncelleDto dto)
     {
@@ -140,10 +142,8 @@ public class IadeController : ControllerBase
         if (iade.IadeDurumu == "ONAYLANDI")
             return BadRequest(new { Mesaj = "Zaten onaylanmış bir iade tekrar güncellenemez." });
 
-        // 🆕 Onaylanınca ilgili siparişin toplam tutarından düş
         if (yeniDurum == "ONAYLANDI" && iade.SiparisDetayId.HasValue)
         {
-            // SiparişDetay üzerinden Sipariş'i ve TÜM detaylarını çek
             var detay = await _context.SiparisDetays
                 .Include(d => d.Siparis)
                     .ThenInclude(s => s.SiparisDetays)
@@ -151,15 +151,24 @@ public class IadeController : ControllerBase
 
             if (detay?.Siparis != null)
             {
-                // İade edilen ürünü işaretle
+                // SADECE iade edilen ürünün tutarını düş (TÜM SİPARİŞİ DEĞİL!)
+                var eskiTutar = detay.Siparis.ToplamTutar ?? 0;
+                var yeniTutar = Math.Max(0, eskiTutar - iade.IadeTutari);
+
+                detay.Siparis.ToplamTutar = yeniTutar; // SADECE iade edilen ürünü düş
                 detay.IadeEdildi = true;
 
-                // ToplamTutar'a DOKUNMUYORUZ — orijinal/brüt tutar olarak kalır
+                Console.WriteLine($"📊 Sipariş #{detay.SiparisId} - Eski: {eskiTutar} - İade: {iade.IadeTutari} - Yeni: {yeniTutar}");
 
-                // Siparişteki TÜM ürünler iade edildi mi kontrol et
-                bool hepsiIadeEdildi = detay.Siparis.SiparisDetays.All(d => d.IadeEdildi);
-
-                detay.Siparis.SiparisDurumu = hepsiIadeEdildi ? "IADE" : "KISMI_IADE";
+                // Sipariş durumunu güncelle
+                if (yeniTutar <= 0)
+                {
+                    detay.Siparis.SiparisDurumu = "IADE";
+                }
+                else
+                {
+                    detay.Siparis.SiparisDurumu = "KISMI_IADE";
+                }
             }
         }
 
@@ -169,10 +178,13 @@ public class IadeController : ControllerBase
         return Ok(new
         {
             Mesaj = $"İade durumu başarıyla '{yeniDurum}' olarak güncellendi.",
+            YeniToplamTutar = iade.SiparisDetay?.Siparis?.ToplamTutar ?? 0,
             SiparisDurumu = iade.SiparisDetay?.Siparis?.SiparisDurumu,
             IadeTutari = iade.IadeTutari
         });
     }
+
+    
 
     // DELETE /api/Iade/{id}
     [HttpDelete("{id}")]
