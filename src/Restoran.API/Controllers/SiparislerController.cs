@@ -106,6 +106,9 @@ public class SiparislerController : ControllerBase
 
         var stokHataMesajlari = new List<string>();
         var stokHataDetaylari = new List<object>();
+        // 🔑 Stok kontrolünü geçen kalemleri burada topluyoruz ki kontrol bittikten
+        // hemen sonra (sipariş garson tarafından alınır alınmaz) gerçekten düşebilelim.
+        var dusulecekMalzemeler = new List<(Malzemeler Malzeme, decimal Miktar, string UrunAdi, int Adet, int UrunId)>();
 
         foreach (var d in dto.Detaylar)
         {
@@ -153,6 +156,10 @@ public class SiparislerController : ControllerBase
                         Adet = adet
                     });
                 }
+                else
+                {
+                    dusulecekMalzemeler.Add((malzeme, gerekliMiktar, urun.UrunAdi, adet, urun.UrunId));
+                }
             }
         }
 
@@ -165,6 +172,25 @@ public class SiparislerController : ControllerBase
                 HataKodu = "STOK_YETERSIZ",
                 Hatalar = stokHataMesajlari,
                 Detaylar = stokHataDetaylari
+            });
+        }
+
+        // ============================================================
+        //  STOK DÜŞÜMÜ: Garson siparişi aldığı anda (tamamlama beklemeden) düşülür
+        // ============================================================
+        int stokPersonelId = dto.PersonelId ?? 1;
+        foreach (var kalem in dusulecekMalzemeler)
+        {
+            kalem.Malzeme.StokMiktari -= kalem.Miktar;
+
+            _context.StokHarekets.Add(new StokHareket
+            {
+                UrunId = kalem.UrunId,
+                PersonelId = stokPersonelId,
+                StokIslemTipi = "CIKIS",
+                StokMiktari = (int)kalem.Miktar,
+                IsleminTarihSaati = DateTime.Now,
+                IsleminAciklamasi = $"Sipariş alındı - {kalem.UrunAdi} ({kalem.Adet} adet)"
             });
         }
 
@@ -438,15 +464,13 @@ public class SiparislerController : ControllerBase
         });
     }
 
-    // PUT /api/siparisler/{id}/tamamla -> Siparişi tamamlar ve stoktan düşer
+    // PUT /api/siparisler/{id}/tamamla -> Siparişi tamamlar
+    // NOT: Stok artık sipariş OLUŞTURULDUĞU anda (CreateOrder) düşülüyor.
+    // Bu yüzden tamamlama adımında tekrar stok düşümü YAPILMAZ, sadece durum güncellenir.
     [HttpPut("{id}/tamamla")]
     public async Task<IActionResult> SiparisTamamla(int id)
     {
         var siparis = await _context.Siparislers
-            .Include(s => s.SiparisDetays)
-            .ThenInclude(sd => sd.Urun)
-            .ThenInclude(u => u.UrunRecetesis)
-            .ThenInclude(ur => ur.Malzeme)
             .FirstOrDefaultAsync(s => s.SiparisId == id);
 
         if (siparis == null)
@@ -460,66 +484,6 @@ public class SiparislerController : ControllerBase
 
         if (siparis.SiparisDurumu == "ODENDI")
             return BadRequest("Ödemesi alınmış sipariş tamamlanamaz.");
-
-        int personelId = siparis.PersonelId ?? 1;
-
-        var stokHataMesajlari = new List<string>();
-        var stokHareketleri = new List<StokHareket>();
-
-        foreach (var detay in siparis.SiparisDetays)
-        {
-            var urun = detay.Urun;
-            if (urun == null) continue;
-
-            var receteler = urun.UrunRecetesis;
-            if (receteler == null || !receteler.Any())
-            {
-                stokHataMesajlari.Add($"{urun.UrunAdi} için reçete tanımlı değil!");
-                continue;
-            }
-
-            foreach (var recete in receteler)
-            {
-                var malzeme = recete.Malzeme;
-                if (malzeme == null) continue;
-
-                var kullanilacakMiktar = recete.KullanimMiktari * detay.Adet;
-
-                if (malzeme.StokMiktari < kullanilacakMiktar)
-                {
-                    stokHataMesajlari.Add($"{malzeme.MalzemeAdi} yetersiz! " +
-                        $"Gerekli: {kullanilacakMiktar} {malzeme.Birim}, " +
-                        $"Mevcut: {malzeme.StokMiktari} {malzeme.Birim}");
-                    continue;
-                }
-
-                malzeme.StokMiktari -= kullanilacakMiktar;
-
-                stokHareketleri.Add(new StokHareket
-                {
-                    UrunId = urun.UrunId,
-                    PersonelId = personelId,
-                    StokIslemTipi = "CIKIS",
-                    StokMiktari = (int)kullanilacakMiktar,
-                    IsleminTarihSaati = DateTime.Now,
-                    IsleminAciklamasi = $"Sipariş #{siparis.SiparisId} - {urun.UrunAdi} ({detay.Adet} adet)"
-                });
-            }
-        }
-
-        if (stokHataMesajlari.Any())
-        {
-            return BadRequest(new
-            {
-                Mesaj = "Stok yetersiz! Sipariş tamamlanamadı.",
-                Hatalar = stokHataMesajlari
-            });
-        }
-
-        foreach (var hareket in stokHareketleri)
-        {
-            _context.StokHarekets.Add(hareket);
-        }
 
         siparis.SiparisDurumu = "TAMAMLANDI";
 
@@ -546,9 +510,8 @@ public class SiparislerController : ControllerBase
 
         return Ok(new
         {
-            Mesaj = "Sipariş başarıyla tamamlandı ve stoklar güncellendi.",
-            SiparisId = siparis.SiparisId,
-            StokHareketSayisi = stokHareketleri.Count
+            Mesaj = "Sipariş başarıyla tamamlandı.",
+            SiparisId = siparis.SiparisId
         });
     }
 
@@ -595,12 +558,16 @@ public class SiparislerController : ControllerBase
         });
     }
 
-    // PUT /api/siparisler/5/iptal -> Siparişi iptal eder
+    // PUT /api/siparisler/5/iptal -> Siparişi iptal eder ve düşülen stoğu iade eder
     [HttpPut("{id}/iptal")]
     public async Task<IActionResult> SiparisIptal(int id)
     {
         var siparis = await _context.Siparislers
             .Include(s => s.Uye)  // 🔑 UYE BİLGİSİNİ DE AL
+            .Include(s => s.SiparisDetays)
+                .ThenInclude(sd => sd.Urun)
+                    .ThenInclude(u => u.UrunRecetesis)
+                        .ThenInclude(ur => ur.Malzeme)
             .FirstOrDefaultAsync(s => s.SiparisId == id);
 
         if (siparis == null) return NotFound("İptal edilecek sipariş bulunamadı.");
@@ -608,6 +575,34 @@ public class SiparislerController : ControllerBase
         if (siparis.SiparisDurumu == "TAMAMLANDI" || siparis.SiparisDurumu == "ODENDI")
         {
             return BadRequest("Ödemesi alınmış veya tamamlanmış bir sipariş iptal edilemez.");
+        }
+
+        // 🔑 Sipariş oluşturulurken düşülen stok, iptalde geri yükleniyor
+        int stokPersonelId = siparis.PersonelId ?? 1;
+        foreach (var detay in siparis.SiparisDetays)
+        {
+            var urun = detay.Urun;
+            var receteler = urun?.UrunRecetesis;
+            if (receteler == null || !receteler.Any()) continue;
+
+            foreach (var recete in receteler)
+            {
+                var malzeme = recete.Malzeme;
+                if (malzeme == null) continue;
+
+                var iadeMiktar = recete.KullanimMiktari * detay.Adet;
+                malzeme.StokMiktari += iadeMiktar;
+
+                _context.StokHarekets.Add(new StokHareket
+                {
+                    UrunId = urun.UrunId,
+                    PersonelId = stokPersonelId,
+                    StokIslemTipi = "GIRIS",
+                    StokMiktari = (int)iadeMiktar,
+                    IsleminTarihSaati = DateTime.Now,
+                    IsleminAciklamasi = $"Sipariş #{siparis.SiparisId} iptal - {urun.UrunAdi} stoğu iade edildi ({detay.Adet} adet)"
+                });
+            }
         }
 
         siparis.SiparisDurumu = "IPTAL";
