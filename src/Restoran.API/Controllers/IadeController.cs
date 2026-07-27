@@ -89,18 +89,19 @@ public class IadeController : ControllerBase
                 return BadRequest(new { Mesaj = "Bu ürün için zaten bir iade kaydı var." });
         }
 
-        // Durum sabit listeyle doğrulanıyor (DurumGuncelle ile tutarlı)
+        // Durum sabit listeyle doğrulanıyor
         var gecerliDurumlar = new[] { "BEKLEMEDE", "ONAYLANDI", "REDDEDILDI" };
         var durum = (dto.IadeDurumu ?? "BEKLEMEDE").ToUpper().Trim()
             .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C');
         if (!gecerliDurumlar.Contains(durum))
             return BadRequest(new { Mesaj = "Geçersiz iade durumu." });
 
+        // ✅ BURASI DÜZELTİLDİ: dto'dan gelen durumu kullan
         var iade = new Iade
         {
             IadeTarihi = DateTime.Now,
             IadeSebebi = dto.IadeSebebi,
-            IadeDurumu = "BEKLEMEDE",
+            IadeDurumu = durum, // ✅ ESKİ: "BEKLEMEDE" -> YENİ: durum (dto'dan geliyor)
             IadeTutari = dto.IadeTutari,
             SiparisDetayId = dto.SiparisDetayId,
             UrunId = dto.UrunId,
@@ -108,14 +109,42 @@ public class IadeController : ControllerBase
         };
 
         _context.Iades.Add(iade);
+
+        // ✅ EĞER DURUM "ONAYLANDI" İSE, SİPARİŞ TUTARINI HEMEN GÜNCELLE
+        if (durum == "ONAYLANDI" && iade.SiparisDetayId.HasValue)
+        {
+            var siparisDetay = await _context.SiparisDetays
+                .Include(d => d.Siparis)
+                    .ThenInclude(s => s.SiparisDetays)
+                .FirstOrDefaultAsync(d => d.SiparisDetayId == iade.SiparisDetayId);
+
+            if (siparisDetay?.Siparis != null)
+            {
+                var eskiTutar = siparisDetay.Siparis.ToplamTutar ?? 0;
+                var yeniTutar = Math.Max(0, eskiTutar - iade.IadeTutari);
+
+                siparisDetay.Siparis.ToplamTutar = yeniTutar;
+                siparisDetay.IadeEdildi = true;
+
+                // Sipariş durumunu güncelle
+                if (yeniTutar <= 0)
+                    siparisDetay.Siparis.SiparisDurumu = "IADE";
+                else
+                    siparisDetay.Siparis.SiparisDurumu = "KISMI_IADE";
+            }
+        }
+
         await _context.SaveChangesAsync();
 
         return Ok(new
         {
-            Mesaj = "İade işlemi başarıyla kaydedildi.",
+            Mesaj = durum == "ONAYLANDI"
+                ? "İade işlemi başarıyla onaylandı ve cirodan düşüldü."
+                : "İade işlemi başarıyla kaydedildi, onay bekliyor.",
             iade.IadeId,
             iade.IadeTutari,
-            iade.IadeTarihi
+            iade.IadeTarihi,
+            iade.IadeDurumu
         });
     }
 
