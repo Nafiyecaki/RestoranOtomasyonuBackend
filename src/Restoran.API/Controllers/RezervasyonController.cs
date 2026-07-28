@@ -171,6 +171,16 @@ public class RezervasyonController : ControllerBase
         };
 
         _context.Rezervasyons.Add(rezervasyon);
+
+        // ✅ 8. MASA DURUMUNU REZERVE YAP
+        // Masa zaten aktif bir siparişle DOLU ise dokunma; sadece boştaysa REZERVE'e çek.
+        if (masa.MasaDurumu != "DOLU" &&
+            masa.MasaDurumu != "ARIZALI" &&
+            masa.MasaDurumu != "KULLANIM DIŞI")
+        {
+            masa.MasaDurumu = "REZERVE";
+        }
+
         await _context.SaveChangesAsync();
 
         return Ok(new
@@ -249,6 +259,33 @@ public class RezervasyonController : ControllerBase
             if (masa.MasaDurumu == "ARIZALI" || masa.MasaDurumu == "KULLANIM DIŞI")
             {
                 return BadRequest(new { Mesaj = $"{masa.MasaNo} numaralı masa şu anda kullanılamıyor." });
+            }
+
+            // ✅ Masa değiştiyse: eski masayı boşalt, yeni masayı rezerve et
+            if (rezervasyon.MasaId != dto.MasaId.Value)
+            {
+                var eskiMasaId = rezervasyon.MasaId;
+                var eskiMasa = await _context.Masas.FindAsync(eskiMasaId);
+                if (eskiMasa != null && eskiMasa.MasaDurumu == "REZERVE")
+                {
+                    var eskiMasadaBaskaRezervasyonVar = await _context.Rezervasyons.AnyAsync(r =>
+                        r.MasaId == eskiMasaId &&
+                        r.RezervasyonId != id &&
+                        r.Durum != "IPTAL" &&
+                        r.Durum != "REDDEDILDI" &&
+                        r.Durum != "TAMAMLANDI"
+                    );
+
+                    if (!eskiMasadaBaskaRezervasyonVar)
+                    {
+                        eskiMasa.MasaDurumu = "BOŞ";
+                    }
+                }
+
+                if (masa.MasaDurumu != "DOLU")
+                {
+                    masa.MasaDurumu = "REZERVE";
+                }
             }
 
             rezervasyon.MasaId = dto.MasaId.Value;
@@ -389,11 +426,12 @@ public class RezervasyonController : ControllerBase
             });
         }
 
-        // ✅ Eğer rezervasyon tamamlandıysa, masayı boşalt
-        if (yeniDurum == "TAMAMLANDI" && rezervasyon.Durum != "TAMAMLANDI")
+        // ✅ Rezervasyon sona erdiyse (tamamlandı/iptal/reddedildi), masayı boşalt
+        var sonaErenDurumlar = new[] { "TAMAMLANDI", "IPTAL", "REDDEDILDI" };
+        if (sonaErenDurumlar.Contains(yeniDurum) && !sonaErenDurumlar.Contains(rezervasyon.Durum))
         {
             var masa = await _context.Masas.FindAsync(rezervasyon.MasaId);
-            if (masa != null && masa.MasaDurumu == "DOLU")
+            if (masa != null && masa.MasaDurumu == "REZERVE")
             {
                 var baskaRezervasyonVar = await _context.Rezervasyons.AnyAsync(r =>
                     r.MasaId == rezervasyon.MasaId &&
@@ -441,8 +479,8 @@ public class RezervasyonController : ControllerBase
             });
         }
 
-        // ✅ Eğer masa doluysa ve başka rezervasyon yoksa masayı boşalt
-        if (rezervasyon.Masa != null && rezervasyon.Masa.MasaDurumu == "DOLU")
+        // ✅ Eğer masa rezerveyse ve başka rezervasyon yoksa masayı boşalt
+        if (rezervasyon.Masa != null && rezervasyon.Masa.MasaDurumu == "REZERVE")
         {
             var baskaRezervasyonVar = await _context.Rezervasyons.AnyAsync(r =>
                 r.MasaId == rezervasyon.MasaId &&
