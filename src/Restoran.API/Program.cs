@@ -108,7 +108,7 @@ app.UseAuthorization();
 app.MapControllers();
 
 // 💡 SignalR Endpoint Haritası
-app.MapHub<SiparisHub>("/hubs/siparis");
+app.MapHub<SiparisHub>("/Hubs/SiparisHub");
 app.Run();
 
 // CORS politikasını ekleyin

@@ -22,13 +22,14 @@ public class SiparislerController : ControllerBase
     }
 
     // GET /api/siparisler -> Tüm siparişleri Admin ve Garson panelleri için eksiksiz getirir
+    // GET /api/siparisler -> Tüm siparişleri Admin ve Garson panelleri için eksiksiz getirir
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
         var siparisler = await _context.Siparislers
-            .Include(s => s.Uye)        // 🔑 UYE TABLOSUNU DAHİL ET
-            .Include(s => s.Masa)       // 🔑 MASA TABLOSUNU DAHİL ET
-            .Include(s => s.Personel)   // 🔑 PERSONEL TABLOSUNU DAHİL ET
+            .Include(s => s.Uye)
+            .Include(s => s.Masa)
+            .Include(s => s.Personel)
             .OrderByDescending(s => s.SiparisTarihi)
             .Select(s => new
             {
@@ -41,7 +42,7 @@ public class SiparislerController : ControllerBase
                 MasaNo = s.Masa != null ? s.Masa.MasaNo : null,
                 UyeAdi = s.Uye != null ? s.Uye.UyeAdi + " " + s.Uye.UyeSoyadi :
                          (s.SiparisTipi == "ONLINE" || s.SiparisTipi == "GEL-AL" ? "Online Müşteri" : "Ziyaretçi"),
-                UyeId = s.UyeId,  // 🔑 ÜYE ID'Yİ DE GÖNDER
+                UyeId = s.UyeId,
                 PersonelAdi = s.Personel != null ? s.Personel.PersonelAdi + " " + s.Personel.PersonelSoyadi : null,
                 DetaySayisi = s.SiparisDetays.Count,
                 SiparisDetays = s.SiparisDetays.Select(d => new
@@ -52,7 +53,9 @@ public class SiparislerController : ControllerBase
                     d.Adet,
                     d.BirimFiyat,
                     SatirToplami = d.Adet * d.BirimFiyat,
-                    d.DetayNot
+                    d.DetayNot,
+                    //  EKLENDI: İade edildi mi bilgisi
+                    IadeEdildi = d.IadeEdildi
                 }).ToList()
             })
             .ToListAsync();
@@ -65,8 +68,8 @@ public class SiparislerController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var siparis = await _context.Siparislers
-            .Include(s => s.Uye)        // 🔑 UYE TABLOSUNU DAHİL ET
-            .Include(s => s.Masa)       // 🔑 MASA TABLOSUNU DAHİL ET
+            .Include(s => s.Uye)
+            .Include(s => s.Masa)
             .Where(s => s.SiparisId == id)
             .Select(s => new
             {
@@ -79,7 +82,7 @@ public class SiparislerController : ControllerBase
                 MasaNo = s.Masa != null ? s.Masa.MasaNo : null,
                 UyeAdi = s.Uye != null ? s.Uye.UyeAdi + " " + s.Uye.UyeSoyadi :
                          (s.SiparisTipi == "ONLINE" || s.SiparisTipi == "GEL-AL" ? "Online Müşteri" : "Ziyaretçi"),
-                UyeId = s.UyeId,  // 🔑 ÜYE ID'Yİ DE GÖNDER
+                UyeId = s.UyeId,
                 Detaylar = s.SiparisDetays.Select(d => new
                 {
                     d.SiparisDetayId,
@@ -88,7 +91,9 @@ public class SiparislerController : ControllerBase
                     d.Adet,
                     d.BirimFiyat,
                     SatirToplami = d.Adet * d.BirimFiyat,
-                    d.DetayNot
+                    d.DetayNot,
+                    // ✅ EKLENDI: İade edildi mi bilgisi
+                    IadeEdildi = d.IadeEdildi
                 })
             })
             .FirstOrDefaultAsync();
@@ -96,6 +101,7 @@ public class SiparislerController : ControllerBase
         if (siparis == null) return NotFound();
         return Ok(siparis);
     }
+
 
     // POST /api/siparisler -> Yeni sipariş oluşturur
     [HttpPost]

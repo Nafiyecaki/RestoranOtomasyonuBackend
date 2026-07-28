@@ -17,7 +17,6 @@ public class IadeController : ControllerBase
         _context = context;
     }
 
-    // GET /api/Iade
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
@@ -40,7 +39,6 @@ public class IadeController : ControllerBase
         return Ok(iadeler);
     }
 
-    // GET /api/Iade/{id}
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
@@ -63,74 +61,145 @@ public class IadeController : ControllerBase
         return Ok(iade);
     }
 
-    // POST /api/Iade veya POST /api/Iade/siparis-iade
-    [HttpPost]
     [HttpPost("siparis-iade")]
     public async Task<IActionResult> IadeAl([FromBody] IadeEkleDto dto)
     {
-        if (dto == null || string.IsNullOrWhiteSpace(dto.IadeSebebi))
+        if (dto == null)
+            return BadRequest(new { Mesaj = "İade verileri boş olamaz." });
+
+        if (string.IsNullOrWhiteSpace(dto.IadeSebebi))
             return BadRequest(new { Mesaj = "İade sebebi boş olamaz." });
 
         if (dto.IadeTutari <= 0)
             return BadRequest(new { Mesaj = "İade tutarı geçerli olmalı." });
 
-        // SiparisDetayId verilmişse gerçekten var mı kontrol et
-        SiparisDetay? detay = null;
+        int? siparisId = null;
+
         if (dto.SiparisDetayId.HasValue)
         {
-            detay = await _context.SiparisDetays.FindAsync(dto.SiparisDetayId.Value);
+            var detay = await _context.SiparisDetays
+                .Include(d => d.Siparis)
+                .FirstOrDefaultAsync(d => d.SiparisDetayId == dto.SiparisDetayId.Value);
+
             if (detay == null)
                 return NotFound(new { Mesaj = "İlgili sipariş kalemi bulunamadı." });
 
-            // Aynı kalem daha önce iade edilmiş mi?
+            siparisId = detay.SiparisId;
+
             var dahaOnceIadeEdilmis = await _context.Iades
                 .AnyAsync(i => i.SiparisDetayId == dto.SiparisDetayId && i.IadeDurumu != "REDDEDILDI");
             if (dahaOnceIadeEdilmis)
                 return BadRequest(new { Mesaj = "Bu ürün için zaten bir iade kaydı var." });
         }
+        else if (dto.SiparisId.HasValue && dto.UrunId.HasValue)
+        {
+            var detay = await _context.SiparisDetays
+                .FirstOrDefaultAsync(d => d.SiparisId == dto.SiparisId.Value && d.UrunId == dto.UrunId.Value);
 
-        // Durum sabit listeyle doğrulanıyor
+            if (detay != null)
+            {
+                dto.SiparisDetayId = detay.SiparisDetayId;
+                siparisId = dto.SiparisId;
+            }
+            else
+            {
+                siparisId = dto.SiparisId;
+            }
+        }
+
         var gecerliDurumlar = new[] { "BEKLEMEDE", "ONAYLANDI", "REDDEDILDI" };
         var durum = (dto.IadeDurumu ?? "BEKLEMEDE").ToUpper().Trim()
             .Replace('İ', 'I').Replace('Ş', 'S').Replace('Ç', 'C');
         if (!gecerliDurumlar.Contains(durum))
             return BadRequest(new { Mesaj = "Geçersiz iade durumu." });
 
-        // ✅ BURASI DÜZELTİLDİ: dto'dan gelen durumu kullan
         var iade = new Iade
         {
             IadeTarihi = DateTime.Now,
             IadeSebebi = dto.IadeSebebi,
-            IadeDurumu = durum, // ✅ ESKİ: "BEKLEMEDE" -> YENİ: durum (dto'dan geliyor)
+            IadeDurumu = durum,
             IadeTutari = dto.IadeTutari,
             SiparisDetayId = dto.SiparisDetayId,
             UrunId = dto.UrunId,
-            PersonelId = dto.PersonelId
+            PersonelId = dto.PersonelId ?? 1
         };
 
         _context.Iades.Add(iade);
 
-        // ✅ EĞER DURUM "ONAYLANDI" İSE, SİPARİŞ TUTARINI HEMEN GÜNCELLE
-        if (durum == "ONAYLANDI" && iade.SiparisDetayId.HasValue)
+        if (durum == "ONAYLANDI" && (dto.SiparisDetayId.HasValue || siparisId.HasValue))
         {
-            var siparisDetay = await _context.SiparisDetays
-                .Include(d => d.Siparis)
-                    .ThenInclude(s => s.SiparisDetays)
-                .FirstOrDefaultAsync(d => d.SiparisDetayId == iade.SiparisDetayId);
-
-            if (siparisDetay?.Siparis != null)
+            if (dto.SiparisDetayId.HasValue)
             {
-                var eskiTutar = siparisDetay.Siparis.ToplamTutar ?? 0;
-                var yeniTutar = Math.Max(0, eskiTutar - iade.IadeTutari);
+                var siparisDetay = await _context.SiparisDetays
+                    .Include(d => d.Siparis)
+                        .ThenInclude(s => s.SiparisDetays)
+                    .FirstOrDefaultAsync(d => d.SiparisDetayId == dto.SiparisDetayId);
 
-                siparisDetay.Siparis.ToplamTutar = yeniTutar;
-                siparisDetay.IadeEdildi = true;
+                if (siparisDetay?.Siparis != null)
+                {
+                    var eskiTutar = siparisDetay.Siparis.ToplamTutar ?? 0;
+                    var yeniTutar = Math.Max(0, eskiTutar - iade.IadeTutari);
 
-                // Sipariş durumunu güncelle
-                if (yeniTutar <= 0)
-                    siparisDetay.Siparis.SiparisDurumu = "IADE";
-                else
-                    siparisDetay.Siparis.SiparisDurumu = "KISMI_IADE";
+                    siparisDetay.Siparis.ToplamTutar = yeniTutar;
+                    siparisDetay.IadeEdildi = true;
+
+                    if (yeniTutar <= 0)
+                    {
+                        siparisDetay.Siparis.SiparisDurumu = "IADE";
+
+                        // ✅ MASA DURUMUNU BOŞ YAP
+                        if (siparisDetay.Siparis.MasaId.HasValue)
+                        {
+                            var masa = await _context.Masas.FindAsync(siparisDetay.Siparis.MasaId.Value);
+                            if (masa != null)
+                            {
+                                masa.MasaDurumu = "BOŞ";
+                            }
+                        }
+                    }
+                    else
+                    {
+                        siparisDetay.Siparis.SiparisDurumu = "KISMI_IADE";
+                    }
+                }
+            }
+            else if (siparisId.HasValue)
+            {
+                var siparis = await _context.Siparislers
+                    .Include(s => s.SiparisDetays)
+                    .FirstOrDefaultAsync(s => s.SiparisId == siparisId.Value);
+
+                if (siparis != null)
+                {
+                    var eskiTutar = siparis.ToplamTutar ?? 0;
+                    var yeniTutar = Math.Max(0, eskiTutar - iade.IadeTutari);
+
+                    siparis.ToplamTutar = yeniTutar;
+
+                    foreach (var detay in siparis.SiparisDetays)
+                    {
+                        detay.IadeEdildi = true;
+                    }
+
+                    if (yeniTutar <= 0)
+                    {
+                        siparis.SiparisDurumu = "IADE";
+
+                        // ✅ MASA DURUMUNU BOŞ YAP
+                        if (siparis.MasaId.HasValue)
+                        {
+                            var masa = await _context.Masas.FindAsync(siparis.MasaId.Value);
+                            if (masa != null)
+                            {
+                                masa.MasaDurumu = "BOŞ";
+                            }
+                        }
+                    }
+                    else
+                    {
+                        siparis.SiparisDurumu = "KISMI_IADE";
+                    }
+                }
             }
         }
 
@@ -147,7 +216,6 @@ public class IadeController : ControllerBase
             iade.IadeDurumu
         });
     }
-
 
     [HttpPut("{id}/durum")]
     public async Task<IActionResult> DurumGuncelle(int id, [FromBody] IadeDurumGuncelleDto dto)
@@ -180,19 +248,25 @@ public class IadeController : ControllerBase
 
             if (detay?.Siparis != null)
             {
-                // SADECE iade edilen ürünün tutarını düş (TÜM SİPARİŞİ DEĞİL!)
                 var eskiTutar = detay.Siparis.ToplamTutar ?? 0;
                 var yeniTutar = Math.Max(0, eskiTutar - iade.IadeTutari);
 
-                detay.Siparis.ToplamTutar = yeniTutar; // SADECE iade edilen ürünü düş
+                detay.Siparis.ToplamTutar = yeniTutar;
                 detay.IadeEdildi = true;
 
-                Console.WriteLine($"📊 Sipariş #{detay.SiparisId} - Eski: {eskiTutar} - İade: {iade.IadeTutari} - Yeni: {yeniTutar}");
-
-                // Sipariş durumunu güncelle
                 if (yeniTutar <= 0)
                 {
                     detay.Siparis.SiparisDurumu = "IADE";
+
+                    // ✅ MASA DURUMUNU BOŞ YAP
+                    if (detay.Siparis.MasaId.HasValue)
+                    {
+                        var masa = await _context.Masas.FindAsync(detay.Siparis.MasaId.Value);
+                        if (masa != null)
+                        {
+                            masa.MasaDurumu = "BOŞ";
+                        }
+                    }
                 }
                 else
                 {
@@ -213,9 +287,6 @@ public class IadeController : ControllerBase
         });
     }
 
-    
-
-    // DELETE /api/Iade/{id}
     [HttpDelete("{id}")]
     public async Task<IActionResult> Sil(int id)
     {
