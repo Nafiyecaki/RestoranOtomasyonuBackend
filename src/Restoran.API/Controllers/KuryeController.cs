@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using Microsoft.AspNetCore.SignalR; 
+using Microsoft.AspNetCore.SignalR;
 using Restoran.API.Hubs;
 
 namespace Restoran.API.Controllers
@@ -24,6 +24,19 @@ namespace Restoran.API.Controllers
         {
             _context = context;
             _hubContext = hubContext;
+        }
+
+        // 🔔 Admin/Garson panellerinin dinlediği genel yenileme sinyali.
+        // (Aşağıdaki "SiparisDurumGuncellendi" event'i sadece toast bildirimi için,
+        // bu ise fetchAllData/verileriYukle'yi tetiklemek için ayrı bir event.)
+        private async Task VeriGuncellendiBildir(string islem)
+        {
+            await _hubContext.Clients.All.SendAsync("VeriGuncellendi", new
+            {
+                tip = "kurye",
+                islem,
+                zaman = DateTime.Now
+            });
         }
 
         // ============================================================
@@ -164,6 +177,7 @@ namespace Restoran.API.Controllers
             siparis.PersonelId = dto.PersonelId;
             siparis.SiparisDurumu = "KURYEDE";
             await _context.SaveChangesAsync();
+            await VeriGuncellendiBildir("kabul-et");
 
             // 📣 SignalR Bildirimi: Müşteriye Kuryenin Siparişi Aldığı Sinyali Gidiyor
             if (siparis.UyeId.HasValue)
@@ -206,6 +220,7 @@ namespace Restoran.API.Controllers
             siparis.SiparisDurumu = "TESLIM EDILDI";
             siparis.SiparisTarihi = DateTime.Now;
             await _context.SaveChangesAsync();
+            await VeriGuncellendiBildir("teslim-et");
 
             // 📣 SignalR Bildirimi: Müşteriye Teslimat Bilgisi Gidiyor
             if (siparis.UyeId.HasValue)
@@ -307,6 +322,7 @@ namespace Restoran.API.Controllers
                 siparis.SiparisDurumu = "KURYEDE";
 
                 await _context.SaveChangesAsync();
+                await VeriGuncellendiBildir("siparis-ata");
 
                 // 📣 SignalR Bildirimi: Admin siparişi kuryeye atadığında müşteriye haber ver
                 if (siparis.UyeId.HasValue)
@@ -377,6 +393,7 @@ namespace Restoran.API.Controllers
             siparis.SiparisDurumu = "IPTAL";
             siparis.PersonelId = null;
             await _context.SaveChangesAsync();
+            await VeriGuncellendiBildir("siparis-iptal");
 
             return Ok(new
             {
@@ -416,6 +433,7 @@ namespace Restoran.API.Controllers
 
                 siparis.SiparisDurumu = dto.SiparisDurumu;
                 await _context.SaveChangesAsync();
+                await VeriGuncellendiBildir("siparis-durum");
 
                 Console.WriteLine($"✅ Sipariş #{siparisId} durumu güncellendi: {dto.SiparisDurumu}");
 
@@ -445,4 +463,4 @@ namespace Restoran.API.Controllers
             }
         }
     }
-    }
+}

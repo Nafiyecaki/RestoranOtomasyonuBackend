@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Restoran.API.Dtos;
+using Restoran.API.Hubs;
 using Restoran.Data;
 using Restoran.Data.Entities;
 using System;
@@ -14,10 +16,22 @@ namespace Restoran.API.Controllers;
 public class RezervasyonController : ControllerBase
 {
     private readonly DbRestoranContext _context;
+    private readonly IHubContext<SiparisHub> _hubContext;
 
-    public RezervasyonController(DbRestoranContext context)
+    public RezervasyonController(DbRestoranContext context, IHubContext<SiparisHub> hubContext)
     {
         _context = context;
+        _hubContext = hubContext;
+    }
+
+    private async Task RezervasyonDegisikligiBildir(string islem)
+    {
+        await _hubContext.Clients.All.SendAsync("VeriGuncellendi", new
+        {
+            tip = "rezervasyon",
+            islem,
+            zaman = DateTime.Now
+        });
     }
 
     // GET /api/Rezervasyon
@@ -182,6 +196,7 @@ public class RezervasyonController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+        await RezervasyonDegisikligiBildir("ekle");
 
         return Ok(new
         {
@@ -370,6 +385,7 @@ public class RezervasyonController : ControllerBase
         {
             int affectedRows = await _context.SaveChangesAsync();
             Console.WriteLine($"✅ {affectedRows} satır güncellendi!");
+            await RezervasyonDegisikligiBildir("guncelle");
         }
         catch (Exception ex)
         {
@@ -450,6 +466,7 @@ public class RezervasyonController : ControllerBase
 
         rezervasyon.Durum = yeniDurum;
         await _context.SaveChangesAsync();
+        await RezervasyonDegisikligiBildir("durum");
 
         return Ok(new
         {
@@ -498,6 +515,7 @@ public class RezervasyonController : ControllerBase
 
         _context.Rezervasyons.Remove(rezervasyon);
         await _context.SaveChangesAsync();
+        await RezervasyonDegisikligiBildir("sil");
 
         return Ok(new { Mesaj = "Rezervasyon sistemden başarıyla kaldırıldı.", RezervasyonId = id });
     }

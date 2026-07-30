@@ -1,7 +1,9 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Restoran.API.Dtos;
+using Restoran.API.Hubs;
 using Restoran.Data;
 using Restoran.Data.Entities;
 using System;
@@ -16,10 +18,24 @@ namespace Restoran.API.Controllers;
 public class MasaController : ControllerBase
 {
     private readonly DbRestoranContext _context;
+    private readonly IHubContext<SiparisHub> _hubContext;
 
-    public MasaController(DbRestoranContext context)
+    public MasaController(DbRestoranContext context, IHubContext<SiparisHub> hubContext)
     {
         _context = context;
+        _hubContext = hubContext;
+    }
+
+    // 🔔 Tüm bağlı istemcilere (Admin, Garson, vs.) "masa verisi değişti,
+    // kendi fetchAllData/verileriYukle'ni tekrar çalıştır" sinyali gönderir.
+    private async Task MasaDegisikligiBildir(string islem)
+    {
+        await _hubContext.Clients.All.SendAsync("VeriGuncellendi", new
+        {
+            tip = "masa",
+            islem,
+            zaman = DateTime.Now
+        });
     }
 
     // ✅ GET /api/masa - Tüm masaları ve aktif sipariş özetlerini getirir
@@ -163,6 +179,7 @@ public class MasaController : ControllerBase
 
         _context.Masas.Add(masa);
         await _context.SaveChangesAsync();
+        await MasaDegisikligiBildir("ekle");
 
         return Ok(new
         {
@@ -207,6 +224,7 @@ public class MasaController : ControllerBase
         if (dto.Kapasite > 0) masa.Kapasite = dto.Kapasite;
 
         await _context.SaveChangesAsync();
+        await MasaDegisikligiBildir("guncelle");
 
         return Ok(new
         {
@@ -250,6 +268,7 @@ public class MasaController : ControllerBase
 
         masa.MasaDurumu = durum;
         await _context.SaveChangesAsync();
+        await MasaDegisikligiBildir("durum");
 
         return Ok(new
         {
@@ -298,6 +317,7 @@ public class MasaController : ControllerBase
         hedefMasa.MasaDurumu = "DOLU";
 
         await _context.SaveChangesAsync();
+        await MasaDegisikligiBildir("tasi");
 
         return Ok(new { Mesaj = $"{kaynakMasa.MasaNo} masası başarıyla {hedefMasa.MasaNo} masasına taşındı." });
     }
@@ -322,6 +342,7 @@ public class MasaController : ControllerBase
 
         _context.Masas.Remove(masa);
         await _context.SaveChangesAsync();
+        await MasaDegisikligiBildir("sil");
 
         return Ok(new { Mesaj = "Masa sistemden başarıyla silindi.", MasaId = id });
     }
