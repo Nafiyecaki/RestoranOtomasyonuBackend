@@ -25,29 +25,73 @@ public class AuthController : ControllerBase
         _config = config;
     }
 
-    // POST /api/Auth/login
+    // ============================================================
+    // 🔐 LOGIN - PERSONEL + UYELER
+    // ============================================================
     [HttpPost("login")]
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginDto dto)
     {
         try
         {
+            Console.WriteLine($"📤 Login isteği: KullaniciAdi={dto.KullaniciAdi}");
+
+            // 1️⃣ Önce Personel tablosunda ara (Admin, Garson, Aşçı, Kurye)
             var personel = await _context.Personels
-                 .Include(p => p.Rol)
-                 .FirstOrDefaultAsync(p => p.KullaniciAdi == dto.KullaniciAdi && p.IsActive == true);
+                .Include(p => p.Rol)
+                .FirstOrDefaultAsync(p => p.KullaniciAdi == dto.KullaniciAdi && p.IsActive == true);
 
+            // 2️⃣ Personel bulunamazsa Uyeler tablosunda ara (MÜŞTERİ)
             if (personel == null)
-                return Unauthorized(new { success = false, message = "Kullanıcı bulunamadı." });
+            {
+                Console.WriteLine($"🔍 Personel bulunamadı, Uyeler tablosu aranıyor...");
 
-            // ⛔ BCrypt hash kontrolü (şimdilik kapalı - açmak için alttaki düz metin kontrolünü kapatıp bunu aç)
-            // if (!BCrypt.Net.BCrypt.Verify(dto.Sifre, personel.PersonelSifre))
-            //     return Unauthorized(new { success = false, message = "Şifre hatalı." });
+                // ✅ EMAIL veya KULLANICI ADI ile ara
+                var uye = await _context.Uyelers
+                    .FirstOrDefaultAsync(u =>
+                        (u.UyeEmail == dto.KullaniciAdi || u.UyeAdi == dto.KullaniciAdi) &&
+                        u.IsActive == true);
 
-            // ✅ Düz metin şifre kontrolü (aktif)
+                if (uye == null)
+                {
+                    Console.WriteLine($"❌ Kullanıcı bulunamadı: {dto.KullaniciAdi}");
+                    return Unauthorized(new { success = false, message = "Kullanıcı bulunamadı." });
+                }
+
+                // Şifre kontrolü
+                if (uye.UyeSifre != dto.Sifre)
+                {
+                    Console.WriteLine($"❌ Şifre hatalı: {dto.KullaniciAdi}");
+                    return Unauthorized(new { success = false, message = "Şifre hatalı." });
+                }
+
+                Console.WriteLine($"✅ Uye bulundu: {uye.UyeEmail}");
+
+                // Uye için token oluştur
+                var token = TokenUret(uye.UyeId, uye.UyeEmail ?? "", "Uye");
+
+                return Ok(new
+                {
+                    success = true,
+                    Token = token,
+                    RefreshToken = "",
+                    PersonelId = uye.UyeId,
+                    AdSoyad = uye.UyeAdi + " " + uye.UyeSoyadi,
+                    Rol = "Uye",
+                    IsUye = true
+                });
+            }
+
+            // 3️⃣ Personel için şifre kontrolü
             if (personel.PersonelSifre != dto.Sifre)
+            {
+                Console.WriteLine($"❌ Personel şifre hatalı: {dto.KullaniciAdi}");
                 return Unauthorized(new { success = false, message = "Şifre hatalı." });
+            }
 
-            var token = TokenUret(personel.PersonelId,
+            Console.WriteLine($"✅ Personel bulundu: {personel.KullaniciAdi}");
+
+            var tokenPersonel = TokenUret(personel.PersonelId,
                                   personel.KullaniciAdi,
                                   personel.Rol?.RolAdi ?? "Bilinmiyor");
 
@@ -59,21 +103,25 @@ public class AuthController : ControllerBase
             return Ok(new
             {
                 success = true,
-                Token = token,
+                Token = tokenPersonel,
                 RefreshToken = refreshToken,
                 PersonelId = personel.PersonelId,
                 AdSoyad = personel.PersonelAdi + " " + personel.PersonelSoyadi,
-                Rol = personel.Rol?.RolAdi ?? "Bilinmiyor"
+                Rol = personel.Rol?.RolAdi ?? "Bilinmiyor",
+                IsUye = false
             });
         }
         catch (Exception ex)
         {
             Console.WriteLine($"❌ Login Hatası: {ex.Message}");
+            Console.WriteLine($"📚 StackTrace: {ex.StackTrace}");
             return StatusCode(500, new { success = false, message = "Sunucu hatası: " + ex.Message });
         }
     }
 
-    // POST /api/Auth/register -> yeni kullanıcı kaydı
+    // ============================================================
+    // 📝 REGISTER (Personel kaydı)
+    // ============================================================
     [HttpPost("register")]
     [AllowAnonymous]
     public async Task<IActionResult> Register([FromBody] RegisterDto dto)
@@ -89,7 +137,6 @@ public class AuthController : ControllerBase
             if (dto.Sifre.Length < 6)
                 return BadRequest(new { success = false, message = "Şifre en az 6 karakter olmalı." });
 
-            // 🔥 Rol ID kontrolü (1:Admin, 2:Garson, 3:Aşçı, 4:Kurye)
             if (dto.RolId < 1 || dto.RolId > 4)
                 return BadRequest(new { success = false, message = "Geçersiz rol ID. (1:Admin, 2:Garson, 3:Aşçı, 4:Kurye)" });
 
@@ -109,7 +156,7 @@ public class AuthController : ControllerBase
                 PersonelSoyadi = dto.PersonelSoyadi ?? "Bilinmiyor",
                 KullaniciAdi = dto.KullaniciAdi,
                 PersonelSifre = dto.Sifre,
-                RolId = dto.RolId, // ← RolId direkt atanıyor
+                RolId = dto.RolId,
                 IsActive = true
             };
 
@@ -132,11 +179,9 @@ public class AuthController : ControllerBase
         }
     }
 
-
-
-
-
-    // POST /api/Auth/refresh
+    // ============================================================
+    // 🔄 REFRESH TOKEN
+    // ============================================================
     [HttpPost("refresh")]
     [AllowAnonymous]
     public async Task<IActionResult> Refresh([FromBody] RefreshDto dto)
@@ -176,7 +221,9 @@ public class AuthController : ControllerBase
         }
     }
 
-    // POST /api/Auth/sifre-degistir
+    // ============================================================
+    // 🔑 ŞİFRE DEĞİŞTİR
+    // ============================================================
     [HttpPost("sifre-degistir")]
     [Authorize]
     public async Task<IActionResult> SifreDegistir([FromBody] SifreDegistirDto dto)
@@ -194,28 +241,18 @@ public class AuthController : ControllerBase
             if (personel == null)
                 return NotFound(new { success = false, message = "Kullanıcı bulunamadı." });
 
-            // ⛔ BCrypt hash kontrolü (şimdilik kapalı)
-            // if (!BCrypt.Net.BCrypt.Verify(dto.EskiSifre, personel.PersonelSifre))
-            //     return BadRequest(new { success = false, message = "Mevcut şifre hatalı." });
-
-            // ✅ Düz metin kontrol (aktif)
             if (personel.PersonelSifre != dto.EskiSifre)
                 return BadRequest(new { success = false, message = "Mevcut şifre hatalı." });
 
             if (dto.YeniSifre.Length < 6)
                 return BadRequest(new { success = false, message = "Yeni şifre en az 6 karakter olmalı." });
 
-            // ⛔ Yeni şifreyi BCrypt ile hash'leyerek kaydetme (şimdilik kapalı)
-            // personel.PersonelSifre = BCrypt.Net.BCrypt.HashPassword(dto.YeniSifre);
-
-            // ✅ Düz metin kaydet (aktif)
             personel.PersonelSifre = dto.YeniSifre;
-
             personel.RefreshToken = null;
             personel.RefreshTokenBitis = null;
             await _context.SaveChangesAsync();
 
-            return Ok(new { success = true, message = "Şifre başarıyla değiştirildi. Lütfen tekrar giriş yapın." });
+            return Ok(new { success = true, message = "Şifre başarıyla değiştirildi." });
         }
         catch (Exception ex)
         {
@@ -224,7 +261,9 @@ public class AuthController : ControllerBase
         }
     }
 
-    // POST /api/Auth/logout
+    // ============================================================
+    // 🚪 ÇIKIŞ
+    // ============================================================
     [HttpPost("logout")]
     [Authorize]
     public async Task<IActionResult> Logout()
@@ -252,13 +291,14 @@ public class AuthController : ControllerBase
         }
     }
 
-    // ============ ÖZEL METODLAR ============
-
-    private string TokenUret(int personelId, string kullaniciAdi, string rol)
+    // ============================================================
+    // 🔧 ÖZEL METODLAR
+    // ============================================================
+    private string TokenUret(int id, string kullaniciAdi, string rol)
     {
         var claims = new[]
         {
-            new Claim(ClaimTypes.NameIdentifier, personelId.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, id.ToString()),
             new Claim(ClaimTypes.Name, kullaniciAdi),
             new Claim(ClaimTypes.Role, rol)
         };
