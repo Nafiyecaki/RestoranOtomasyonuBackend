@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Restoran.API.Dtos;
+using Restoran.API.Hubs;
 using Restoran.Data;
 using Restoran.Data.Entities;
 using System;
@@ -15,10 +17,24 @@ namespace Restoran.API.Controllers;
 public class SiparislerController : ControllerBase
 {
     private readonly DbRestoranContext _context;
+    private readonly IHubContext<SiparisHub> _hubContext;
 
-    public SiparislerController(DbRestoranContext context)
+    public SiparislerController(DbRestoranContext context, IHubContext<SiparisHub> hubContext)
     {
         _context = context;
+        _hubContext = hubContext;
+    }
+
+    // 🔔 Sipariş verisiyle ilgili bir değişiklik olduğunda tüm bağlı istemcilere
+    // (Admin, Garson, Aşçı panelleri) haber verir.
+    private async Task SiparisDegisikligiBildir(string islem)
+    {
+        await _hubContext.Clients.All.SendAsync("VeriGuncellendi", new
+        {
+            tip = "siparis",
+            islem,
+            zaman = DateTime.Now
+        });
     }
 
     // GET /api/siparisler -> Tüm siparişleri Admin ve Garson panelleri için eksiksiz getirir
@@ -331,6 +347,7 @@ public class SiparislerController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+        await SiparisDegisikligiBildir(mevcutSiparisEklemesi ? "ekle-ekleme" : "olustur");
 
         // Oluşturulan/güncellenen siparişi detaylarıyla birlikte geri döndür
         var createdOrder = await _context.Siparislers
@@ -430,6 +447,7 @@ public class SiparislerController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+        await SiparisDegisikligiBildir("guncelle");
 
         // Güncellenmiş siparişi detaylarıyla birlikte geri döndür
         var updatedOrder = await _context.Siparislers
@@ -513,6 +531,7 @@ public class SiparislerController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+        await SiparisDegisikligiBildir("tamamla");
 
         return Ok(new
         {
@@ -553,6 +572,7 @@ public class SiparislerController : ControllerBase
 
         siparis.SiparisDurumu = yeniDurum;
         await _context.SaveChangesAsync();
+        await SiparisDegisikligiBildir("durum");
 
         return Ok(new
         {
@@ -627,6 +647,7 @@ public class SiparislerController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+        await SiparisDegisikligiBildir("iptal");
 
         return Ok(new
         {
@@ -651,6 +672,7 @@ public class SiparislerController : ControllerBase
         {
             _context.Siparislers.Remove(siparis);
             await _context.SaveChangesAsync();
+            await SiparisDegisikligiBildir("sil");
             return Ok(new
             {
                 Mesaj = "Sipariş ve ilişkili tüm detayları sistemden tamamen silindi.",
