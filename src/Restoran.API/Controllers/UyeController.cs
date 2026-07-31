@@ -1,5 +1,7 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using Restoran.API.Dtos;
 using Restoran.Data;
 using Restoran.Data.Entities;
@@ -17,7 +19,9 @@ public class UyelerController : ControllerBase
         _context = context;
     }
 
-    // GET /api/Uyeler
+    // ============================================================
+    // GET /api/Uyeler - Tüm üyeler
+    // ============================================================
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
@@ -35,11 +39,11 @@ public class UyelerController : ControllerBase
                 IsActive = u.IsActive ?? false,
                 Adresler = u.Adres.Select(a => new
                 {
-                    a.AdresId,              // ✅ Büyük harf ile
+                    a.AdresId,
                     a.AdresTipi,
                     a.AcikAdres,
                     a.TeslimatBolgesindeMi,
-                    a.UyeId                 // ✅ Büyük harf ile (UyeId  , UyelD değil!)
+                    a.UyeId
                 }).ToList()
             })
             .ToListAsync();
@@ -47,7 +51,9 @@ public class UyelerController : ControllerBase
         return Ok(uyeler);
     }
 
-    // GET /api/Uyeler/5
+    // ============================================================
+    // GET /api/Uyeler/{id} - Tek üye
+    // ============================================================
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
@@ -66,11 +72,11 @@ public class UyelerController : ControllerBase
                 u.IsActive,
                 Adresler = u.Adres.Select(a => new
                 {
-                    a.AdresId,              // ✅ Büyük harf ile
+                    a.AdresId,
                     a.AdresTipi,
                     a.AcikAdres,
                     a.TeslimatBolgesindeMi,
-                    a.UyeId                 // ✅ Büyük harf ile
+                    a.UyeId
                 }).ToList()
             })
             .FirstOrDefaultAsync();
@@ -79,7 +85,102 @@ public class UyelerController : ControllerBase
         return Ok(uye);
     }
 
-    // POST /api/Uyeler
+    // ============================================================
+    // 👤 GET /api/Uyeler/profil - KULLANICININ KENDİ PROFİLİ (YENİ!)
+    // ============================================================
+    [HttpGet("profil")]
+    [Authorize]
+    public async Task<IActionResult> GetProfile()
+    {
+        try
+        {
+            // Token'dan kullanıcı ID'sini al
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(userIdStr, out var userId))
+                return Unauthorized(new { success = false, message = "Yetkisiz erişim." });
+
+            var uye = await _context.Uyelers
+                .Include(u => u.Adres)
+                .FirstOrDefaultAsync(u => u.UyeId == userId && u.IsActive == true);
+
+            if (uye == null)
+                return NotFound(new { success = false, message = "Kullanıcı bulunamadı." });
+
+            return Ok(new
+            {
+                success = true,
+                uyeId = uye.UyeId,
+                uyeAdi = uye.UyeAdi,
+                uyeSoyadi = uye.UyeSoyadi,
+                uyeEmail = uye.UyeEmail,
+                uyeTelefon = uye.UyeTelefon,
+                cinsiyet = uye.Cinsiyet,
+                kayitTarihi = uye.KayitTarihi,
+                adresler = uye.Adres.Select(a => new
+                {
+                    a.AdresId,
+                    a.AdresTipi,
+                    a.AcikAdres,
+                    a.TeslimatBolgesindeMi
+                }).ToList()
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ GetProfile Hatası: {ex.Message}");
+            return StatusCode(500, new { success = false, message = "Sunucu hatası: " + ex.Message });
+        }
+    }
+
+    // ============================================================
+    // 👤 PUT /api/Uyeler/profil - PROFİL GÜNCELLE (YENİ!)
+    // ============================================================
+    [HttpPut("profil")]
+    [Authorize]
+    public async Task<IActionResult> UpdateProfile([FromBody] UyeGuncelleDto dto)
+    {
+        try
+        {
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(userIdStr, out var userId))
+                return Unauthorized(new { success = false, message = "Yetkisiz erişim." });
+
+            var uye = await _context.Uyelers
+                .Include(u => u.Adres)
+                .FirstOrDefaultAsync(u => u.UyeId == userId && u.IsActive == true);
+
+            if (uye == null)
+                return NotFound(new { success = false, message = "Kullanıcı bulunamadı." });
+
+            // Sadece izin verilen alanları güncelle
+            uye.UyeAdi = dto.UyeAdi ?? uye.UyeAdi;
+            uye.UyeSoyadi = dto.UyeSoyadi ?? uye.UyeSoyadi;
+            uye.UyeTelefon = dto.UyeTelefon ?? uye.UyeTelefon;
+
+            // Şifre güncelleme (opsiyonel)
+            if (!string.IsNullOrEmpty(dto.UyeSifre))
+            {
+                uye.UyeSifre = dto.UyeSifre;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                success = true,
+                message = "✅ Profil başarıyla güncellendi!"
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ UpdateProfile Hatası: {ex.Message}");
+            return StatusCode(500, new { success = false, message = "Sunucu hatası: " + ex.Message });
+        }
+    }
+
+    // ============================================================
+    // POST /api/Uyeler - Yeni üye ekle
+    // ============================================================
     [HttpPost]
     public async Task<IActionResult> UyeEkle([FromBody] UyeEkleDto dto)
     {
@@ -100,7 +201,6 @@ public class UyelerController : ControllerBase
             IsActive = true
         };
 
-        // ✅ Adres ekleme
         if (!string.IsNullOrEmpty(dto.AcikAdres))
         {
             var adres = new Adres
@@ -108,7 +208,7 @@ public class UyelerController : ControllerBase
                 AdresTipi = dto.AdresTipi ?? "Varsayılan",
                 AcikAdres = dto.AcikAdres,
                 TeslimatBolgesindeMi = dto.TeslimatBolgesindeMi ?? false,
-                UyeId= uye.UyeId  // ✅ UyeID (UyelD değil!)
+                UyeId = uye.UyeId
             };
             uye.Adres.Add(adres);
         }
@@ -122,19 +222,13 @@ public class UyelerController : ControllerBase
             uye.UyeId,
             uye.UyeAdi,
             uye.UyeSoyadi,
-            uye.UyeEmail,
-            Adres = uye.Adres.Select(a => new
-            {
-                a.AdresId,
-                a.AdresTipi,
-                a.AcikAdres,
-                a.TeslimatBolgesindeMi,
-                a.UyeId
-            }).FirstOrDefault()
+            uye.UyeEmail
         });
     }
 
-    // PUT /api/Uyeler/{id}
+    // ============================================================
+    // PUT /api/Uyeler/{id} - Üye güncelle (Admin)
+    // ============================================================
     [HttpPut("{id}")]
     public async Task<IActionResult> Guncelle(int id, [FromBody] UyeGuncelleDto dto)
     {
@@ -168,7 +262,6 @@ public class UyelerController : ControllerBase
             uye.IsActive = dto.IsActive.Value;
         }
 
-        // ✅ Adres güncelleme
         if (!string.IsNullOrEmpty(dto.AcikAdres))
         {
             var mevcutAdres = uye.Adres.FirstOrDefault();
@@ -189,7 +282,7 @@ public class UyelerController : ControllerBase
                     AdresTipi = dto.AdresTipi ?? "Varsayılan",
                     AcikAdres = dto.AcikAdres,
                     TeslimatBolgesindeMi = dto.TeslimatBolgesindeMi ?? false,
-                    UyeId = uye.UyeId  // ✅ UyeID
+                    UyeId = uye.UyeId
                 };
                 uye.Adres.Add(yeniAdres);
             }
@@ -199,7 +292,9 @@ public class UyelerController : ControllerBase
         return Ok(new { Mesaj = "Üye bilgileri başarıyla güncellendi." });
     }
 
-    // DELETE /api/Uyeler/{id}
+    // ============================================================
+    // DELETE /api/Uyeler/{id} - Üye sil (Pasif yap)
+    // ============================================================
     [HttpDelete("{id}")]
     public async Task<IActionResult> Sil(int id)
     {
@@ -213,4 +308,4 @@ public class UyelerController : ControllerBase
         await _context.SaveChangesAsync();
         return Ok(new { Mesaj = "Üye pasif hale getirildi.", UyeId = id });
     }
-} 
+}
