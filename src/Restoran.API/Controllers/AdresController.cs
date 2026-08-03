@@ -1,13 +1,16 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.API.Dtos;
 using Restoran.Data;
 using Restoran.Data.Entities;
+using System.Security.Claims;
 
 namespace Restoran.API.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/uyeler/adresler")]
+[Authorize]
 public class AdresController : ControllerBase
 {
     private readonly DbRestoranContext _context;
@@ -17,39 +20,48 @@ public class AdresController : ControllerBase
         _context = context;
     }
 
-    // GET /api/Adres
+    private int? GetCurrentUyeId()
+    {
+        var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return int.TryParse(claim, out var id) ? id : null;
+    }
+
+    // GET /api/uyeler/adresler  -> sadece giriş yapan üyenin adresleri
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        // EF Core çoğul adlandırmasına göre burası '_context.Adreses' veya '_context.Adres' olabilir.
-     
+        var uyeId = GetCurrentUyeId();
+        if (uyeId == null) return Unauthorized();
+
         var adresler = await _context.Adres
+            .Where(a => a.UyeId == uyeId)
             .Select(a => new
             {
                 a.AdresId,
                 a.AdresTipi,
                 a.AcikAdres,
-                a.TeslimatBolgesindeMi,
-                a.UyeId
+                a.TeslimatBolgesindeMi
             })
             .ToListAsync();
 
         return Ok(adresler);
     }
 
-    // GET /api/Adres/5
+    // GET /api/uyeler/adresler/5
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
+        var uyeId = GetCurrentUyeId();
+        if (uyeId == null) return Unauthorized();
+
         var adres = await _context.Adres
-            .Where(a => a.AdresId == id)
+            .Where(a => a.AdresId == id && a.UyeId == uyeId)
             .Select(a => new
             {
                 a.AdresId,
                 a.AdresTipi,
                 a.AcikAdres,
-                a.TeslimatBolgesindeMi,
-                a.UyeId
+                a.TeslimatBolgesindeMi
             })
             .FirstOrDefaultAsync();
 
@@ -57,26 +69,24 @@ public class AdresController : ControllerBase
         return Ok(adres);
     }
 
-    // POST /api/Adres
+    // POST /api/uyeler/adresler
     [HttpPost]
     public async Task<IActionResult> AdresEkle([FromBody] AdresEkleDto dto)
     {
         if (dto == null) return BadRequest();
 
-        // GÜVENLİK KONTROLÜ: Adres tanımlanacak üye veritabanında gerçekten var mı?
-        if (dto.UyeId.HasValue)
-        {
-            // Entity ismi 'Uyeler' olduğu için context içinde muhtemelen 'Uyelers' diye tanımlanmıştır.
-            var uyeVarMi = await _context.Uyelers.AnyAsync(u => u.UyeId == dto.UyeId);
-            if (!uyeVarMi) return NotFound("Adres tanımlanmak istenen üye bulunamadı.");
-        }
+        var uyeId = GetCurrentUyeId();
+        if (uyeId == null) return Unauthorized();
+
+        var uyeVarMi = await _context.Uyelers.AnyAsync(u => u.UyeId == uyeId);
+        if (!uyeVarMi) return NotFound("Üye bulunamadı.");
 
         var adres = new Adres
         {
             AdresTipi = dto.AdresTipi,
             AcikAdres = dto.AcikAdres,
             TeslimatBolgesindeMi = dto.TeslimatBolgesindeMi,
-            UyeId = dto.UyeId
+            UyeId = uyeId
         };
 
         _context.Adres.Add(adres);
@@ -84,48 +94,44 @@ public class AdresController : ControllerBase
 
         return Ok(new
         {
-            Mesaj = "Adres başarıyla sisteme kaydedildi.",
             adres.AdresId,
-            adres.UyeId,
-            adres.AdresTipi
+            adres.AdresTipi,
+            adres.AcikAdres,
+            adres.TeslimatBolgesindeMi
         });
     }
-    // PUT /api/Adres/{id}
+
+    // PUT /api/uyeler/adresler/{id}
     [HttpPut("{id}")]
     public async Task<IActionResult> Guncelle(int id, [FromBody] AdresEkleDto dto)
     {
         if (dto == null) return BadRequest();
 
-        var adres = await _context.Adres.FindAsync(id);
-        if (adres == null) return NotFound(new { Mesaj = "Adres bulunamadı." });
+        var uyeId = GetCurrentUyeId();
+        if (uyeId == null) return Unauthorized();
 
-        // GÜVENLİK KONTROLÜ: Üye değiştiriliyorsa yeni üye gerçekten var mı?
-        if (dto.UyeId.HasValue)
-        {
-            var uyeVarMi = await _context.Uyelers.AnyAsync(u => u.UyeId == dto.UyeId);
-            if (!uyeVarMi) return NotFound(new { Mesaj = "Adres tanımlanmak istenen üye bulunamadı." });
-        }
+        var adres = await _context.Adres
+            .FirstOrDefaultAsync(a => a.AdresId == id && a.UyeId == uyeId);
+        if (adres == null) return NotFound(new { Mesaj = "Adres bulunamadı." });
 
         adres.AdresTipi = dto.AdresTipi;
         adres.AcikAdres = dto.AcikAdres;
         adres.TeslimatBolgesindeMi = dto.TeslimatBolgesindeMi;
-        adres.UyeId = dto.UyeId;
 
         await _context.SaveChangesAsync();
 
-        return Ok(new
-        {
-            Mesaj = "Adres başarıyla güncellendi.",
-            adres.AdresId,
-            adres.AdresTipi
-        });
+        return Ok(new { Mesaj = "Adres güncellendi.", adres.AdresId });
     }
 
-    // DELETE /api/Adres/{id}
+    // DELETE /api/uyeler/adresler/{id}
     [HttpDelete("{id}")]
     public async Task<IActionResult> Sil(int id)
     {
-        var adres = await _context.Adres.FindAsync(id);
+        var uyeId = GetCurrentUyeId();
+        if (uyeId == null) return Unauthorized();
+
+        var adres = await _context.Adres
+            .FirstOrDefaultAsync(a => a.AdresId == id && a.UyeId == uyeId);
         if (adres == null) return NotFound(new { Mesaj = "Adres bulunamadı." });
 
         _context.Adres.Remove(adres);
