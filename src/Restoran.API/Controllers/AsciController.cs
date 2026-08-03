@@ -27,7 +27,9 @@ public class AsciController : ControllerBase
     public async Task<IActionResult> GetAsciSiparisleri()
     {
         var siparisler = await _context.Siparislers
-            .Where(s => s.SiparisDurumu == "BEKLEMEDE" || s.SiparisDurumu == "HAZIRLANIYOR" || s.SiparisDurumu == "HAZIR")
+            .Where(s => s.SiparisDurumu == "BEKLEMEDE" ||
+                        s.SiparisDurumu == "HAZIRLANIYOR" ||
+                        s.SiparisDurumu == "HAZIR")
             .OrderBy(s => s.SiparisTarihi)
             .Select(s => new
             {
@@ -64,7 +66,7 @@ public class AsciController : ControllerBase
         if (siparis == null)
             return NotFound(new { success = false, message = "Sipariş bulunamadı." });
 
-        var gecerliDurumlar = new[] { "BEKLEMEDE", "HAZIRLANIYOR", "HAZIR", "KURYEDE", "YOLDA", "TESLIM EDILDI" };
+        var gecerliDurumlar = new[] { "BEKLEMEDE", "HAZIRLANIYOR", "HAZIR" };
         var yeniDurum = durum?.ToUpper()?.Trim();
 
         if (string.IsNullOrEmpty(yeniDurum) || !gecerliDurumlar.Contains(yeniDurum))
@@ -97,6 +99,9 @@ public class AsciController : ControllerBase
         });
     }
 
+    // ============================================================
+    // 🔥🔥🔥 SİPARİŞ HAZIR VE KURYE ATA - DÜZENLENDİ 🔥🔥🔥
+    // ============================================================
     [HttpPost("siparis/{id}/hazir-ve-kurye-ata")]
     public async Task<IActionResult> SiparisHazirVeKuryeAta(int id)
     {
@@ -115,43 +120,52 @@ public class AsciController : ControllerBase
 
         Console.WriteLine($"📦 Sipariş #{id} - Tip: {siparis.SiparisTipi}, Durum: {siparis.SiparisDurumu}");
 
-        // 🔥 ONLINE siparişler için kurye ata
-        if (siparis.SiparisTipi == "ONLINE")
+        // 🔥🔥🔥 PAKET SERVİS / ONLINE / GEL-AL SİPARİŞLERİ İÇİN KURYE ATA
+        // PAKET SERVİS = ONLINE olarak kabul ediliyor
+        if (siparis.SiparisTipi == "ONLINE" ||
+            siparis.SiparisTipi == "PAKET_SERVIS" ||
+            siparis.SiparisTipi == "PAKET" ||
+            siparis.SiparisTipi == "GEL_AL")
         {
-            // ✅ Müsait kurye bul (Ali Kartal'ı bul)
+            Console.WriteLine($"🔍 Teslimat siparişi, kurye aranıyor...");
+
+            // ✅ Müsait kurye bul
             var kurye = await _context.Personels
                 .Include(p => p.Rol)
-                .Where(p => p.IsActive == true && p.Rol != null && p.Rol.RolAdi.ToUpper() == "KURYE")
+                .Where(p => p.IsActive == true &&
+                           p.Rol != null &&
+                           p.Rol.RolAdi.ToUpper() == "KURYE")
                 .FirstOrDefaultAsync();
 
             Console.WriteLine($"🔍 Bulunan kurye: {(kurye != null ? kurye.PersonelAdi + " " + kurye.PersonelSoyadi : "Kurye yok!")}");
 
             if (kurye != null)
             {
-                // 🔥🔥🔥 KURYE ATA VE DURUMU KURYEDE YAP
+                // Kurye ata ve durumu KURYEDE yap
                 siparis.PersonelId = kurye.PersonelId;
                 siparis.SiparisDurumu = "KURYEDE";
                 await _context.SaveChangesAsync();
 
                 Console.WriteLine($"✅ Sipariş #{id} - Kurye #{kurye.PersonelId} atandı, Durum: KURYEDE");
 
-                // SignalR ile kuryeye bildirim gönder
+                // 📍 Adres bilgisini al
+                string adresBilgisi = "Adres bilinmiyor";
+                if (siparis.Uye != null && siparis.Uye.Adres != null && siparis.Uye.Adres.Any())
+                {
+                    var teslimatAdresi = siparis.Uye.Adres.FirstOrDefault(a => a.TeslimatBolgesindeMi == true);
+                    if (teslimatAdresi != null && !string.IsNullOrEmpty(teslimatAdresi.AcikAdres))
+                        adresBilgisi = teslimatAdresi.AcikAdres;
+                    else
+                    {
+                        var ilkAdres = siparis.Uye.Adres.FirstOrDefault();
+                        if (ilkAdres != null && !string.IsNullOrEmpty(ilkAdres.AcikAdres))
+                            adresBilgisi = ilkAdres.AcikAdres;
+                    }
+                }
+
+                // 📣 SignalR ile kuryeye bildirim gönder
                 try
                 {
-                    string adresBilgisi = "Adres bilinmiyor";
-                    if (siparis.Uye != null && siparis.Uye.Adres != null && siparis.Uye.Adres.Any())
-                    {
-                        var teslimatAdresi = siparis.Uye.Adres.FirstOrDefault(a => a.TeslimatBolgesindeMi == true);
-                        if (teslimatAdresi != null && !string.IsNullOrEmpty(teslimatAdresi.AcikAdres))
-                            adresBilgisi = teslimatAdresi.AcikAdres;
-                        else
-                        {
-                            var ilkAdres = siparis.Uye.Adres.FirstOrDefault();
-                            if (ilkAdres != null && !string.IsNullOrEmpty(ilkAdres.AcikAdres))
-                                adresBilgisi = ilkAdres.AcikAdres;
-                        }
-                    }
-
                     await _hubContext.Clients.Group("Kuryeler").SendAsync("SiparisHazirKurye", new
                     {
                         siparisId = id,
@@ -181,21 +195,39 @@ public class AsciController : ControllerBase
             return Ok(new
             {
                 success = true,
-                message = $"Sipariş #{id} hazır ancak uygun kurye bulunamadı.",
+                message = $"Sipariş #{id} hazır ancak uygun kurye bulunamadı. Sipariş kurye havuzunda bekliyor.",
                 siparisId = id,
                 kuryeBulunamadi = true
             });
         }
 
-        // Salon siparişi
+        // ============================================================
+        // SALON SİPARİŞİ (Masa siparişi) - Kurye atanmaz, garsona bildirim gider
+        // ============================================================
         siparis.SiparisDurumu = "HAZIR";
         await _context.SaveChangesAsync();
+
+        // 📣 Garsonlara bildirim gönder
+        try
+        {
+            await _hubContext.Clients.Group("Garsonlar").SendAsync("SiparisHazir", new
+            {
+                siparisId = id,
+                masaNo = siparis.Masa?.MasaNo ?? "Paket Servis",
+                mesaj = $"Sipariş #{id} - Masa {siparis.Masa?.MasaNo ?? "Paket Servis"} hazır!"
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SignalR bildirimi gönderilemedi: {ex.Message}");
+        }
 
         return Ok(new
         {
             success = true,
             message = $"Sipariş #{id} hazır!",
-            siparisId = id
+            siparisId = id,
+            salonSiparisi = true
         });
     }
 
@@ -215,7 +247,6 @@ public class AsciController : ControllerBase
         if (siparis.SiparisDurumu != "HAZIR")
             return BadRequest(new { success = false, message = "Sipariş henüz hazır değil!" });
 
-        // SignalR ile garsonlara bildirim gönder
         try
         {
             await _hubContext.Clients.Group("Garsonlar").SendAsync("SiparisHazir", new
@@ -322,7 +353,6 @@ public class AsciController : ControllerBase
 
         siparis.SiparisDurumu = "TAMAMLANDI";
 
-        // Masa durumunu güncelle
         if (siparis.MasaId.HasValue)
         {
             var baskaAktifVarMi = await _context.Siparislers.AnyAsync(s =>
@@ -344,7 +374,6 @@ public class AsciController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        // SignalR ile tamamlama bildirimi
         try
         {
             await _hubContext.Clients.All.SendAsync("SiparisDurumGuncellendi", new
