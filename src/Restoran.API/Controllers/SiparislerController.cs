@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Restoran.API.Dtos;
@@ -8,6 +9,7 @@ using Restoran.Data.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace Restoran.API.Controllers;
@@ -73,6 +75,102 @@ public class SiparislerController : ControllerBase
                     //  EKLENDI: İade edildi mi bilgisi
                     IadeEdildi = d.IadeEdildi
                 }).ToList()
+            })
+            .ToListAsync();
+
+        return Ok(siparisler);
+    }
+
+    // 🔑 Token'dan giriş yapmış müşterinin UyeId'sini okur (Uyeler login'de NameIdentifier = UyeId)
+    private int? GetCurrentUyeId()
+    {
+        var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return int.TryParse(raw, out var id) ? id : null;
+    }
+
+    // Bir siparişi mobil uygulamanın (SiparisOzetScreen/Profil) beklediği JSON şekline dönüştürür
+    private static readonly string[] AktifDurumlar =
+        { "BEKLEMEDE", "HAZIRLANIYOR", "HAZIR", "ODENDI", "KURYEDE", "YOLDA" };
+
+    private static readonly string[] GecmisDurumlar =
+        { "TESLIM EDILDI", "TAMAMLANDI", "IPTAL", "IADE", "KISMI_IADE" };
+
+    // GET /api/siparisler/benim-siparislerim -> Giriş yapmış müşterinin aktif (henüz teslim edilmemiş) siparişleri
+    [Authorize]
+    [HttpGet("benim-siparislerim")]
+    public async Task<IActionResult> BenimSiparislerim()
+    {
+        var uyeId = GetCurrentUyeId();
+        if (uyeId == null) return Unauthorized(new { Mesaj = "Yetkisiz erişim." });
+
+        var siparisler = await _context.Siparislers
+            .Include(s => s.Uye)
+                .ThenInclude(u => u!.Adres)
+            .Where(s => s.UyeId == uyeId && AktifDurumlar.Contains(s.SiparisDurumu))
+            .OrderByDescending(s => s.SiparisTarihi)
+            .Select(s => new
+            {
+                s.SiparisId,
+                s.SiparisDurumu,
+                s.SiparisTipi,
+                s.ToplamTutar,
+                s.SiparisTarihi,
+                MusteriAdi = s.Uye != null ? (s.Uye.UyeAdi + " " + s.Uye.UyeSoyadi) : null,
+                MusteriTelefon = s.Uye != null ? s.Uye.UyeTelefon : null,
+                MusteriAdres = s.Uye != null && s.Uye.Adres.Any()
+                    ? s.Uye.Adres.First().AcikAdres
+                    : null,
+                Detaylar = s.SiparisDetays.Select(d => new
+                {
+                    d.SiparisDetayId,
+                    d.UrunId,
+                    UrunAdi = d.Urun != null ? d.Urun.UrunAdi : "Ürün",
+                    d.Adet,
+                    d.BirimFiyat,
+                    SatirToplami = d.Adet * d.BirimFiyat,
+                    d.DetayNot
+                })
+            })
+            .ToListAsync();
+
+        return Ok(siparisler);
+    }
+
+    // GET /api/siparisler/gecmis -> Giriş yapmış müşterinin biten (teslim edildi / iptal / iade) siparişleri
+    [Authorize]
+    [HttpGet("gecmis")]
+    public async Task<IActionResult> Gecmis()
+    {
+        var uyeId = GetCurrentUyeId();
+        if (uyeId == null) return Unauthorized(new { Mesaj = "Yetkisiz erişim." });
+
+        var siparisler = await _context.Siparislers
+            .Include(s => s.Uye)
+                .ThenInclude(u => u!.Adres)
+            .Where(s => s.UyeId == uyeId && GecmisDurumlar.Contains(s.SiparisDurumu))
+            .OrderByDescending(s => s.SiparisTarihi)
+            .Select(s => new
+            {
+                s.SiparisId,
+                s.SiparisDurumu,
+                s.SiparisTipi,
+                s.ToplamTutar,
+                s.SiparisTarihi,
+                MusteriAdi = s.Uye != null ? (s.Uye.UyeAdi + " " + s.Uye.UyeSoyadi) : null,
+                MusteriTelefon = s.Uye != null ? s.Uye.UyeTelefon : null,
+                MusteriAdres = s.Uye != null && s.Uye.Adres.Any()
+                    ? s.Uye.Adres.First().AcikAdres
+                    : null,
+                Detaylar = s.SiparisDetays.Select(d => new
+                {
+                    d.SiparisDetayId,
+                    d.UrunId,
+                    UrunAdi = d.Urun != null ? d.Urun.UrunAdi : "Ürün",
+                    d.Adet,
+                    d.BirimFiyat,
+                    SatirToplami = d.Adet * d.BirimFiyat,
+                    d.DetayNot
+                })
             })
             .ToListAsync();
 
