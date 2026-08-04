@@ -1,5 +1,4 @@
 ﻿using System;
-using System;
 using System.ComponentModel.DataAnnotations;
 
 namespace Restoran.API.Dtos;
@@ -19,12 +18,15 @@ public class UyeGuncelleDto
     public string? UyeTelefon { get; set; }
     public string? Cinsiyet { get; set; }
 
-    public bool ? IsActive {  get; set; }
+    public bool? IsActive { get; set; }
 
     // Şifre boş gelirse eski şifre veritabanında korunur, dolu gelirse ezilir
     public string? UyeSifre { get; set; }
 
-    public string AdresTipi { get; set; }
-    public string AcikAdres { get; set; }
+    // Bu iki alan yalnızca admin (PUT /api/Uyeler/{id}) adres güncellemesi
+    // yaparken kullanılır; profil güncelleme (PUT /api/Uyeler/profil)
+    // bunlara hiç dokunmaz, o yüzden zorunlu olmamalı.
+    public string? AdresTipi { get; set; }
+    public string? AcikAdres { get; set; }
     public bool? TeslimatBolgesindeMi { get; set; }
 }
