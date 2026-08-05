@@ -1,8 +1,10 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restoran.API.Dtos;
 using Restoran.Data;
 using Restoran.Data.Entities;
+using System.Security.Claims;
 
 namespace Restoran.API.Controllers;
 
@@ -15,6 +17,53 @@ public class IadeController : ControllerBase
     public IadeController(DbRestoranContext context)
     {
         _context = context;
+    }
+
+    // ============================================================
+    // ✅ KULLANICININ KENDİ İADE TALEPLERİ (Mobil için)
+    // ============================================================
+    private int? GetCurrentUyeId()
+    {
+        var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return int.TryParse(raw, out var id) ? id : null;
+    }
+
+    [Authorize]
+    [HttpGet("benim-iadelerim")]
+    public async Task<IActionResult> BenimIadelerim()
+    {
+        var uyeId = GetCurrentUyeId();
+        if (uyeId == null)
+            return Unauthorized(new { Mesaj = "Yetkisiz erişim." });
+
+        var iadeler = await _context.Iades
+            .Include(i => i.SiparisDetay)
+                .ThenInclude(d => d!.Siparis)
+            .Include(i => i.SiparisDetay)
+                .ThenInclude(d => d!.Urun)
+            .Include(i => i.Urun)
+            .Where(i => i.SiparisDetay != null
+                     && i.SiparisDetay.Siparis != null
+                     && i.SiparisDetay.Siparis.UyeId == uyeId)
+            .OrderByDescending(i => i.IadeTarihi)
+            .Select(i => new
+            {
+                i.IadeId,
+                i.IadeTarihi,
+                i.IadeSebebi,
+                i.IadeDurumu,
+                i.IadeTutari,
+                i.SiparisDetayId,
+                SiparisId = i.SiparisDetay!.SiparisId,
+                SiparisDurumu = i.SiparisDetay.Siparis!.SiparisDurumu,
+                UrunAdi = i.Urun != null
+                    ? i.Urun.UrunAdi
+                    : (i.SiparisDetay.Urun != null ? i.SiparisDetay.Urun.UrunAdi : "Ürün"),
+                Adet = i.SiparisDetay.Adet
+            })
+            .ToListAsync();
+
+        return Ok(iadeler);
     }
 
     [HttpGet]
