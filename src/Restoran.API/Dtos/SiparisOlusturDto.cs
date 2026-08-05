@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿// Restoran.API/Dtos/SiparisOlusturDto.cs
+using System.Collections.Generic;
 
 namespace Restoran.API.Dtos
 {
@@ -9,6 +10,10 @@ namespace Restoran.API.Dtos
         public int? UyeId { get; set; }
         public int? PersonelId { get; set; }
         public string? SiparisTipi { get; set; }
+        public string? OdemeTipi { get; set; }  
+        public string? MusteriAdi { get; set; } 
+        public string? MusteriTelefon { get; set; } 
+        public string? MusteriAdres { get; set; } 
         public List<SiparisDetayDto> Detaylar { get; set; } = new();
     }
 
