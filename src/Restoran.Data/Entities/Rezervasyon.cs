@@ -23,11 +23,11 @@ public partial class Rezervasyon
 
     public string? Aciklama { get; set; }
 
-    public int MasaId { get; set; }
+    public int? MasaId { get; set; }
 
     public string? RezervasyonTipi { get; set; }
     public int? UyeId { get; set; }
 
     public virtual Uyeler? Uye { get; set; }
-    public virtual Masa Masa { get; set; } = null!;
+    public virtual Masa? Masa { get; set; }
 }

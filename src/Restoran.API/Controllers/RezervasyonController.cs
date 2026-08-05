@@ -124,40 +124,41 @@ public class RezervasyonController : ControllerBase
             return BadRequest(new { Mesaj = "Geçmiş bir tarihe veya saate rezervasyon oluşturulamaz." });
         }
 
-        // ✅ 3. MASA ZORUNLULUK KONTROLÜ
-        if (!dto.MasaId.HasValue)
+        // ✅ 3. MASA (OPSİYONEL)
+        // Müşteri mobilden masa seçmeden de rezervasyon talebi oluşturabilir;
+        // garson daha sonra PUT /api/Rezervasyon/{id} ile uygun masayı atar.
+        Masa? masa = null;
+        if (dto.MasaId.HasValue)
         {
-            return BadRequest(new { Mesaj = "Rezervasyon işlemi için bir masa seçilmesi zorunludur." });
-        }
-
-        var masa = await _context.Masas.FindAsync(dto.MasaId.Value);
-        if (masa == null)
-        {
-            return BadRequest(new { Mesaj = $"ID'si {dto.MasaId.Value} olan masa sistemde bulunamadı." });
-        }
-
-        // ✅ 4. MASA DURUMU KONTROLÜ
-        if (masa.MasaDurumu == "ARIZALI" || masa.MasaDurumu == "KULLANIM DIŞI")
-        {
-            return BadRequest(new { Mesaj = $"{masa.MasaNo} numaralı masa şu anda kullanılamıyor. Durum: {masa.MasaDurumu}" });
-        }
-
-        // ✅ 5. ÇAKIŞMA KONTROLÜ (2 saat aralık)
-        var cakismaVarMi = await _context.Rezervasyons.AnyAsync(r =>
-            r.MasaId == dto.MasaId.Value &&
-            r.Durum != "IPTAL" &&
-            r.Durum != "REDDEDILDI" &&
-            r.Durum != "TAMAMLANDI" &&
-            r.TarihSaat >= tarihSaat.AddHours(-2) &&
-            r.TarihSaat <= tarihSaat.AddHours(2)
-        );
-
-        if (cakismaVarMi)
-        {
-            return BadRequest(new
+            masa = await _context.Masas.FindAsync(dto.MasaId.Value);
+            if (masa == null)
             {
-                Mesaj = $"{masa.MasaNo} numaralı masa, belirtilen saat aralığında başka bir müşteriye rezerve edilmiş durumda."
-            });
+                return BadRequest(new { Mesaj = $"ID'si {dto.MasaId.Value} olan masa sistemde bulunamadı." });
+            }
+
+            // ✅ 4. MASA DURUMU KONTROLÜ
+            if (masa.MasaDurumu == "ARIZALI" || masa.MasaDurumu == "KULLANIM DIŞI")
+            {
+                return BadRequest(new { Mesaj = $"{masa.MasaNo} numaralı masa şu anda kullanılamıyor. Durum: {masa.MasaDurumu}" });
+            }
+
+            // ✅ 5. ÇAKIŞMA KONTROLÜ (2 saat aralık)
+            var cakismaVarMi = await _context.Rezervasyons.AnyAsync(r =>
+                r.MasaId == dto.MasaId.Value &&
+                r.Durum != "IPTAL" &&
+                r.Durum != "REDDEDILDI" &&
+                r.Durum != "TAMAMLANDI" &&
+                r.TarihSaat >= tarihSaat.AddHours(-2) &&
+                r.TarihSaat <= tarihSaat.AddHours(2)
+            );
+
+            if (cakismaVarMi)
+            {
+                return BadRequest(new
+                {
+                    Mesaj = $"{masa.MasaNo} numaralı masa, belirtilen saat aralığında başka bir müşteriye rezerve edilmiş durumda."
+                });
+            }
         }
 
         // ✅ 6. ÜYE KONTROLÜ (opsiyonel)
@@ -179,16 +180,17 @@ public class RezervasyonController : ControllerBase
             Durum = dto.Durum ?? "BEKLEMEDE",
             OlusturulmaTarihi = DateTime.Now,
             Aciklama = dto.Aciklama,
-            MasaId = dto.MasaId.Value,
+            MasaId = dto.MasaId,
             RezervasyonTipi = dto.RezervasyonTipi ?? "WEB",
             UyeId = dto.UyeId
         };
 
         _context.Rezervasyons.Add(rezervasyon);
 
-        // ✅ 8. MASA DURUMUNU REZERVE YAP
+        // ✅ 8. MASA VERİLDİYSE DURUMUNU REZERVE YAP
         // Masa zaten aktif bir siparişle DOLU ise dokunma; sadece boştaysa REZERVE'e çek.
-        if (masa.MasaDurumu != "DOLU" &&
+        if (masa != null &&
+            masa.MasaDurumu != "DOLU" &&
             masa.MasaDurumu != "ARIZALI" &&
             masa.MasaDurumu != "KULLANIM DIŞI")
         {
@@ -205,7 +207,7 @@ public class RezervasyonController : ControllerBase
             rezervasyon.MusteriAdi,
             rezervasyon.TarihSaat,
             rezervasyon.Durum,
-            MasaNo = masa.MasaNo
+            MasaNo = masa?.MasaNo
         });
     }
 
@@ -280,7 +282,9 @@ public class RezervasyonController : ControllerBase
             if (rezervasyon.MasaId != dto.MasaId.Value)
             {
                 var eskiMasaId = rezervasyon.MasaId;
-                var eskiMasa = await _context.Masas.FindAsync(eskiMasaId);
+                var eskiMasa = eskiMasaId.HasValue
+                    ? await _context.Masas.FindAsync(eskiMasaId.Value)
+                    : null;
                 if (eskiMasa != null && eskiMasa.MasaDurumu == "REZERVE")
                 {
                     var eskiMasadaBaskaRezervasyonVar = await _context.Rezervasyons.AnyAsync(r =>
