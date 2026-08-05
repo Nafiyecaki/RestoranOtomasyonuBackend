@@ -150,6 +150,31 @@ public class MasaController : ControllerBase
         }
     }
 
+    [HttpGet("qr-info/{masaId}")]
+    public async Task<IActionResult> GetMasaQrInfo(int masaId)
+    {
+        var masa = await _context.Masas
+            .Where(m => m.MasaId == masaId)
+            .Select(m => new
+            {
+                m.MasaId,
+                m.MasaNo,
+                m.MasaDurumu,
+                m.Kapasite
+            })
+            .FirstOrDefaultAsync();
+
+        if (masa == null)
+            return NotFound(new { success = false, message = "Masa bulunamadı." });
+
+        return Ok(new
+        {
+            success = true,
+            data = masa,
+            message = "QR kod bilgileri alındı."
+        });
+    }
+
     // ✅ POST /api/masa - Yeni Masa Ekleme
     [HttpPost]
     public async Task<IActionResult> MasaEkle([FromBody] MasaEkleDto dto)
